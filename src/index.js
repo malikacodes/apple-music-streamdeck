@@ -4,6 +4,8 @@
 // queue.js.
 import streamDeck, { action, SingletonAction } from "@elgato/streamdeck";
 import {
+  drawAddTo,
+  drawAirPlay,
   drawCollection,
   drawFavorite,
   drawMultimedia,
@@ -13,6 +15,7 @@ import {
   drawPlayPlaylist,
   drawQueue,
   drawRepeat,
+  drawSearch,
   drawShuffle,
   drawStripNotice,
   drawVolume,
@@ -629,6 +632,176 @@ class Queue extends MusicAction {
   }
 }
 
+// The Add to playlist key. Its settings page lists only my playlists
+// (a song can't be added to an album), saved the same way as Play
+// Playlist's choice.
+class AddTo extends MusicAction {
+  added = new Map();
+
+  draw(status, settings, target) {
+    const source = pickedSource(settings);
+    if (source?.kind !== "playlist") return drawAddTo({});
+    return drawAddTo({ name: source.name, added: (this.added.get(target.id) ?? 0) > Date.now() });
+  }
+
+  async press(target, status, settings) {
+    const source = pickedSource(settings);
+    if (source?.kind !== "playlist") return this.notice(target, "Pick a playlist");
+    const done = await music.addTo(source);
+    if (done === "none") return this.notice(target, "No track");
+    // The tick stays two seconds and the once a second redraw takes it
+    // away, like a notice.
+    if (done) this.added.set(target.id, Date.now() + NOTICE_MS);
+    return done;
+  }
+
+  async onSendToPlugin(ev) {
+    if (ev.payload?.event !== "getAddTargets") return;
+    try {
+      const lists = await music.playlists();
+      await streamDeck.ui.sendToPropertyInspector({
+        event: "getAddTargets",
+        items: lists.map((list) => ({ value: JSON.stringify({ kind: "playlist", id: list.id, name: list.name }), label: list.name })),
+      });
+    } catch (err) {
+      streamDeck.logger.error(`Couldn't list my playlists for the settings page: ${err.message}`);
+    }
+  }
+}
+
+// The AirPlay dial: turn through the places Music can play to, push to
+// play there. The list is read when the dial shows up and again on a
+// push after it's sat a minute, so a speaker I just turned on shows up.
+class AirPlay extends MusicAction {
+  strip = true;
+  devices = null;
+  readAt = 0;
+  picked = null;
+
+  async onWillAppear(ev) {
+    await super.onWillAppear(ev);
+    await this.load();
+  }
+
+  async load() {
+    try {
+      this.devices = await music.airplayDevices();
+      this.readAt = Date.now();
+    } catch (err) {
+      streamDeck.logger.error(`Couldn't read the AirPlay devices: ${err.message}`);
+    }
+    await redraw();
+  }
+
+  // Picked by name, so a list read again doesn't move the highlight. It
+  // starts on the place Music is playing to now.
+  at() {
+    const list = this.devices ?? [];
+    const named = list.findIndex((device) => device.name === this.picked);
+    return named >= 0 ? named : Math.max(0, list.findIndex((device) => device.selected));
+  }
+
+  draw() {
+    if (!this.devices) return drawStripNotice("AirPlay", { dim: true });
+    return drawAirPlay({ devices: this.devices, at: this.at() });
+  }
+
+  turn(target, ticks) {
+    const list = this.devices ?? [];
+    if (list.length === 0) return true;
+    this.picked = list[(((this.at() + ticks) % list.length) + list.length) % list.length].name;
+    return this.render(target).then(() => true);
+  }
+
+  async press(target) {
+    if (Date.now() - this.readAt > LIST_MS) await this.load();
+    const device = this.devices?.[this.at()];
+    if (!device) return this.notice(target, "No AirPlay devices");
+    const open = await music.selectAirPlay(device.name);
+    await this.load();
+    return open;
+  }
+}
+
+// The Saved Search dial. The words live in its settings. A settings
+// text box saves after every letter, so the search waits until the
+// words have sat still for a moment, and runs on the once a second
+// redraw rather than a timer of its own.
+const SETTLE_MS = 900;
+
+class SavedSearch extends MusicAction {
+  strip = true;
+  found = new Map();
+  picks = new Map();
+  typedAt = new Map();
+  searching = new Set();
+
+  async onDidReceiveSettings(ev) {
+    this.typedAt.set(ev.action.id, Date.now());
+    await super.onDidReceiveSettings(ev);
+  }
+
+  words(target) {
+    return String(this.settings.get(target.id)?.words ?? "").trim();
+  }
+
+  // Starts a search when the words have changed and settled. Drawing
+  // can't wait for it, so it redraws when the answer lands.
+  look(target) {
+    const words = this.words(target);
+    const known = this.found.get(target.id);
+    const settled = Date.now() - (this.typedAt.get(target.id) ?? 0) > SETTLE_MS;
+    if (!words || known?.words === words || !settled || this.searching.has(target.id)) return;
+    this.searching.add(target.id);
+    music
+      .search(words)
+      .then((results) => this.found.set(target.id, { words, results }))
+      .catch((err) => {
+        streamDeck.logger.error(`Couldn't search my library: ${err.message}`);
+        this.found.set(target.id, { words, results: [] });
+      })
+      .finally(() => {
+        this.searching.delete(target.id);
+        this.picks.delete(target.id);
+        return this.render(target).catch(() => {});
+      });
+  }
+
+  at(target) {
+    const results = this.found.get(target.id)?.results ?? [];
+    return Math.max(0, results.findIndex((song) => song.id === this.picks.get(target.id)));
+  }
+
+  draw(status, settings, target) {
+    this.look(target);
+    const words = this.words(target);
+    const known = this.found.get(target.id);
+    const results = known?.words === words ? known.results : undefined;
+    const song = results?.[this.at(target)];
+    const art = song ? artFor(song.id, () => music.libraryArt(song.index, song.id)) : null;
+    return drawSearch({ words, results, at: this.at(target), art });
+  }
+
+  turn(target, ticks) {
+    const results = this.found.get(target.id)?.results ?? [];
+    if (results.length === 0) return true;
+    this.picks.set(target.id, results[(((this.at(target) + ticks) % results.length) + results.length) % results.length].id);
+    return this.render(target).then(() => true);
+  }
+
+  async press(target) {
+    const song = this.found.get(target.id)?.results?.[this.at(target)];
+    if (!song) return this.notice(target, "Nothing to play");
+    const played = await music.playLibraryTrack(song.index, song.id);
+    if (played === "moved") {
+      // The library changed since the search. Searching again fixes it.
+      this.found.delete(target.id);
+      return this.notice(target, "Search again");
+    }
+    return played;
+  }
+}
+
 const register = (name, Kind) => streamDeck.actions.registerAction(new (action({ UUID: `com.malikacodes.apple-music.${name}` })(Kind))());
 register("playback", Playback);
 register("shuffle", Shuffle);
@@ -640,6 +813,9 @@ register("nowplaying", NowPlaying);
 register("playplaylist", PlayPlaylist);
 register("collection", Collection);
 register("queue", Queue);
+register("addto", AddTo);
+register("airplay", AirPlay);
+register("search", SavedSearch);
 
 // connect() comes after the actions are registered.
 streamDeck.connect();

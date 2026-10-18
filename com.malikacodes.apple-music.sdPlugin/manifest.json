@@ -190,6 +190,63 @@
           "Image": "imgs/queue-dial"
         }
       ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.addto",
+      "Name": "Add to Playlist",
+      "Tooltip": "Adds the song that is playing to one of my playlists",
+      "Icon": "imgs/addto",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/addto.html",
+      "States": [
+        {
+          "Image": "imgs/addto-key"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.airplay",
+      "Name": "AirPlay",
+      "Tooltip": "Turn to pick where Music plays, push to play there",
+      "Icon": "imgs/airplay",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Pick a place",
+          "Push": "Play here",
+          "Touch": "Play here"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/airplay-dial"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.search",
+      "Name": "Saved Search",
+      "Tooltip": "Songs in my library that match the words I saved",
+      "Icon": "imgs/search",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/search.html",
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Browse",
+          "Push": "Play",
+          "Touch": "Play"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/search-dial"
+        }
+      ]
     }
   ],
   "Profiles": [

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawCollection, drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawPlayPlaylist, drawQueue, drawRepeat, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
+import { drawAddTo, drawAirPlay, drawCollection, drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawPlayPlaylist, drawQueue, drawRepeat, drawSearch, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
 
 // A tiny real JPEG, packed as a data URI, to stand in for album art.
 const ART = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
@@ -49,6 +49,17 @@ const pictures = {
   "queue last": drawQueue({ view: { live: true, total: 42, last: true } }),
   "queue not mine": drawQueue({ view: { live: false }, now: { id: "A1", art: ART } }),
   "queue nothing playing": drawQueue({ view: { live: false }, now: {} }),
+  "add to unset": drawAddTo({}),
+  "add to": drawAddTo({ name: "Vibes" }),
+  "add to added": drawAddTo({ name: "Vibes", added: true }),
+  "airplay none": drawAirPlay({ devices: [] }),
+  "airplay one": drawAirPlay({ devices: [{ name: "Malika’s MacBook Pro", selected: true, kind: "computer" }] }),
+  "airplay many": drawAirPlay({ devices: [{ name: "Malika’s MacBook Pro", selected: true, kind: "computer" }, { name: "Living Room", selected: false, kind: "Apple TV" }, { name: "Kitchen", selected: false, kind: "speaker" }], at: 1 }),
+  "search no words": drawSearch({ words: "" }),
+  "search waiting": drawSearch({ words: "love" }),
+  "search nothing": drawSearch({ words: "zzzqqq", results: [] }),
+  "search one": drawSearch({ words: "love", results: [{ index: 2, id: "EEBF76266CE98E82", name: "Nuff Man a Come", artist: "Action Fire" }], art: ART }),
+  "search many": drawSearch({ words: "love", results: [{ id: "A", name: "One", artist: "X" }, { id: "B", name: "Two", artist: "Y" }, { id: "C", name: "Three", artist: "Z" }], at: 2 }),
 };
 
 // The deck is pure black, so anything else behind a picture is a gray
@@ -180,4 +191,33 @@ test("the Queue strip shows 3 of 42, or how to get a queue", () => {
   assert.ok(pictures["queue last"].includes(">End of the queue<"));
   assert.ok(pictures["queue not mine"].includes(">Play from a dial<") && pictures["queue not mine"].includes(`href="${ART}"`));
   assert.ok(!pictures["queue nothing playing"].includes("<image"));
+});
+
+// Add to: unset says pick one, set shows the playlist, and a press gives
+// a pink tick that looks nothing like the resting key.
+test("Add to playlist draws unset, set and the tick", () => {
+  assert.ok(pictures["add to unset"].includes(">Pick a<"));
+  assert.ok(pictures["add to"].includes(">Vibes<"));
+  assert.ok(pictures["add to added"].includes(">Added<"));
+  assert.notEqual(pictures["add to"], pictures["add to added"]);
+});
+
+// AirPlay with nothing, one place and many. The place Music plays to
+// now is pink, the highlighted one has its name written out.
+test("the AirPlay strip draws none, one and many", () => {
+  assert.ok(pictures["airplay none"].includes(">No AirPlay devices<"));
+  assert.ok(pictures["airplay one"].includes('stroke="#fc3c44"'));
+  assert.ok(!pictures["airplay one"].includes('opacity="0.3"'));
+  assert.ok(pictures["airplay many"].includes(">Living Room<"));
+  assert.equal((pictures["airplay many"].match(/opacity="0.3"/g) ?? []).length, 2);
+});
+
+// Saved Search's empty states each say something different, and nothing
+// matching says what was searched for.
+test("the Saved Search strip draws no words, waiting, nothing, one and many", () => {
+  assert.ok(pictures["search no words"].includes(">Add search words<"));
+  assert.ok(pictures["search waiting"].includes(">Searching<"));
+  assert.ok(pictures["search nothing"].includes(">Nothing matches<") && pictures["search nothing"].includes("“zzzqqq”"));
+  assert.ok(pictures["search one"].includes(">1 of 1<") && pictures["search one"].includes(">Nuff Man a Come<"));
+  assert.ok(pictures["search many"].includes(">3 of 3<") && pictures["search many"].includes(">Three<"));
 });

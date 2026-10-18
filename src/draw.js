@@ -270,3 +270,70 @@ export function drawQueue({ view = { live: false }, art, now = {} } = {}) {
       `<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(view.track.name, 176, 15))}</text>`,
   );
 }
+
+// The Add to playlist key: a list with a plus, and the playlist's name
+// along the bottom. After a press it's a pink tick for two seconds, so
+// I know the song went in.
+export function drawAddTo({ name, added = false } = {}) {
+  if (!name) {
+    return key(
+      `<text x="72" y="66" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">Pick a</text>` +
+        `<text x="72" y="92" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">playlist</text>`,
+    );
+  }
+  if (added) return key(`<path d="M42 70l20 20 40-44" ${pen(PINK)}/><text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">Added</text>`);
+  return key(
+    `<g ${pen(WHITE)}><path d="M34 36h52M34 58h52M34 80h30"/><path d="M96 66v34M79 83h34" stroke="${PINK}"/></g>` +
+      `<text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(name, 130, 17))}</text>`,
+  );
+}
+
+// Small pictures for the places Music can play to: a laptop, a speaker,
+// a TV, and the AirPlay sign for anything else. Each is drawn at 40 by
+// 40 and moved into place.
+const PLACES = {
+  computer: `<rect x="7" y="8" width="26" height="18" rx="2"/><path d="M3 31h34"/>`,
+  speaker: `<rect x="11" y="4" width="18" height="32" rx="6"/><circle cx="20" cy="24" r="5"/>`,
+  "Apple TV": `<rect x="4" y="7" width="32" height="21" rx="3"/><path d="M14 34h12"/>`,
+  other: `<path d="M8 28H5V7h30v21h-3"/><path d="M20 24l9 11H11z"/>`,
+};
+function place(kind, x, y, size, color) {
+  const shape = PLACES[kind] ?? (kind === "television" ? PLACES["Apple TV"] : PLACES.other);
+  return `<g transform="translate(${x} ${y}) scale(${Number((size / 40).toFixed(3))})" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${shape}</g>`;
+}
+
+// The AirPlay dial: the highlighted place in the middle with its full
+// name along the bottom, its neighbours faded either side. The one
+// Music is playing to now is pink, so I can see where I am before I
+// push.
+export function drawAirPlay({ devices = [], at = 0 } = {}) {
+  if (devices.length === 0) return drawStripNotice("No AirPlay devices");
+  const pick = (offset) => devices[(((at + offset) % devices.length) + devices.length) % devices.length];
+  const parts = [];
+  if (devices.length > 2) parts.push(`<g opacity="0.3">${place(pick(-1).kind, 18, 16, 36, pick(-1).selected ? PINK : WHITE)}</g>`);
+  if (devices.length > 1) parts.push(`<g opacity="0.3">${place(pick(1).kind, 146, 16, 36, pick(1).selected ? PINK : WHITE)}</g>`);
+  parts.push(place(pick(0).kind, 74, 6, 52, pick(0).selected ? PINK : WHITE));
+  parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
+  return strip(parts.join(""));
+}
+
+// The Saved Search dial: the highlighted song's tile, "3 of 23" and the
+// artist next to it, and the song's name along the bottom. No words yet,
+// or nothing that matches, each say so.
+export function drawSearch({ words = "", results, at = 0, art } = {}) {
+  if (!String(words).trim()) return drawStripNotice("Add search words", { dim: true });
+  if (!results) return drawStripNotice("Searching", { dim: true });
+  if (results.length === 0) {
+    return strip(
+      `<text x="100" y="44" font-size="16" font-weight="600" text-anchor="middle" fill="${WHITE}">Nothing matches</text>` +
+        `<text x="100" y="68" font-size="15" text-anchor="middle" fill="${DIM}">${safe(fit(`“${String(words).trim()}”`, 180, 15))}</text>`,
+    );
+  }
+  const song = results[at] ?? results[0];
+  return strip(
+    tile({ art, x: 12, y: 8, size: 58, radius: 12, id: "found" }) +
+      `<text x="82" y="30" font-size="13" fill="${DIM}">${(results.indexOf(song) + 1)} of ${results.length}</text>` +
+      `<text x="82" y="52" font-size="13" fill="${DIM}">${safe(fit(song.artist ?? "", 106, 13))}</text>` +
+      `<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(song.name, 176, 15))}</text>`,
+  );
+}

@@ -487,3 +487,73 @@ export async function queueTracks() {
   const [[id], ...rest] = rowsOf(answer);
   return { id, tracks: rest.map(([trackId, name, artist]) => ({ id: trackId, name, artist })) };
 }
+
+// Adds the song that's playing to one of my playlists. Music copies it
+// in at the bottom, the same as "Add to Playlist" in its menu. Hands
+// back "none" when nothing is playing, false when Music is closed.
+export async function addTo(source) {
+  const from = sourceRef(source);
+  if (!from?.list) throw new Error("Songs can only be added to a playlist");
+  const answer = await ask(`    try\n      set t to current track\n    on error\n      return "none"\n    end try\n    duplicate t to ${from.tracks}\n    return "added"`);
+  if (answer === CLOSED) return false;
+  return answer === "added" ? true : "none";
+}
+
+// Every place Music can play to (my Mac, speakers, a TV), and which one
+// it's playing to now. A handful at most, so each is asked on its own.
+export async function airplayDevices() {
+  const answer = await ask(
+    `    set rows to {}
+    repeat with d in every AirPlay device
+      set end of rows to my clean(name of d) & tab & (selected of d) & tab & (kind of d as text)
+    end repeat
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  return rowsOf(answer)
+    .filter(([name]) => name)
+    .map(([name, selected, kind]) => ({ name, selected: selected === "true", kind }));
+}
+
+// Plays to that one place only, instead of wherever it was playing.
+export async function selectAirPlay(name) {
+  return (await ask(`    set current AirPlay devices to {(first AirPlay device whose name is ${quoted(name)})}`)) !== CLOSED;
+}
+
+// Songs in my library that match the words, the same search as the box
+// in Music's window. The catalogue isn't searchable from a script, so
+// it's my library only. Forty is plenty to turn through on a dial.
+const SEARCH_MAX = 40;
+export async function search(words) {
+  if (!String(words ?? "").trim()) return [];
+  const answer = await ask(
+    `    set found to search library playlist 1 for ${quoted(String(words).trim())} only songs
+    set rows to {}
+    repeat with i from 1 to count found
+      if i > ${SEARCH_MAX} then exit repeat
+      set t to item i of found
+      set end of rows to (index of t as text) & tab & (persistent ID of t) & tab & my clean(name of t) & tab & my clean(artist of t)
+    end repeat
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  return rowsOf(answer)
+    .filter(([index, id]) => Number(index) > 0 && isId(id))
+    .map(([index, id, name, artist]) => ({ index: Number(index), id, name, artist }));
+}
+
+// Plays one song from my library by its place there, after checking
+// it's still the song I searched for (the library can change between
+// the search and the push).
+export async function playLibraryTrack(index, id) {
+  if (!Number.isInteger(index) || index < 1 || !isId(id)) return false;
+  const answer = await ask(`    set t to track ${index} of library playlist 1\n    if persistent ID of t is not "${id}" then return "moved"\n    play t\n    return "playing"`);
+  if (answer === CLOSED) return false;
+  return answer === "playing" ? true : "moved";
+}
+
+// A searched song's art, by its place in my library.
+export async function libraryArt(index, id, clock = Date.now()) {
+  if (!isId(id) || !Number.isInteger(index) || index < 1) return null;
+  return cachedArt(id, `track ${index} of library playlist 1`, id, clock);
+}

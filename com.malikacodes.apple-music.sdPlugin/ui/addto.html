@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- Which playlist a press adds the playing song to. The plugin fills
+         the list from Music when the page opens. -->
+    <sdpi-item label="Adds to">
+      <sdpi-select setting="list" datasource="getAddTargets" hot-reload show-refresh placeholder="Pick a playlist"></sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

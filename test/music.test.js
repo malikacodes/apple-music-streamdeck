@@ -21,7 +21,7 @@ mock.module(new URL("../src/run.js", import.meta.url).href, {
     },
   },
 });
-const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, artwork, ART_RETRY_MS, NOT_RUNNING } = await import("../src/music.js");
+const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, artwork, ART_RETRY_MS, NOT_RUNNING, search, addTo, quoted, playlists } = await import("../src/music.js");
 
 // Music's side of an art request, the way it behaves on my Mac: it writes
 // the picture's bytes to the file the script names and says "saved", or
@@ -194,4 +194,40 @@ test("a strange persistent ID never reaches a script", async () => {
   assert.equal(await artwork('A" & quit & "', 0), null);
   assert.equal(await artwork("", 0), null);
   assert.equal(music.scripts.length, before);
+});
+
+// Search words go inside a script in quotes. A quote or a backslash in
+// them must stay text and not end the string early.
+test("words with quotes in them stay inside their quotes", () => {
+  assert.equal(quoted('Say "Hi"'), '"Say \\"Hi\\""');
+  assert.equal(quoted("back\\slash"), '"back\\\\slash"');
+});
+
+// An empty search box asks Music nothing, and the answer's rows become
+// songs, with anything that isn't a real place or ID left out.
+test("search skips empty words and reads Music's rows", async () => {
+  const before = music.scripts.length;
+  assert.deepEqual(await search("   "), []);
+  assert.equal(music.scripts.length, before);
+  music.answer = "2\tEEBF76266CE98E82\tNuff Man a Come\tAction Fire\n0\tnope\tBroken\tRow";
+  assert.deepEqual(await search("love"), [{ index: 2, id: "EEBF76266CE98E82", name: "Nuff Man a Come", artist: "Action Fire" }]);
+  assert.match(music.scripts.at(-1), /search library playlist 1 for "love" only songs/);
+});
+
+// Adding needs a song playing and a playlist to add to. An album isn't
+// somewhere a song can be added.
+test("add to playlist says when nothing is playing, and refuses albums", async () => {
+  music.answer = "none";
+  assert.equal(await addTo({ kind: "playlist", id: "A1A1A1A1", name: "Vibes" }), "none");
+  music.answer = "added";
+  assert.equal(await addTo({ kind: "playlist", id: "A1A1A1A1", name: "Vibes" }), true);
+  assert.match(music.scripts.at(-1), /duplicate t to \(first user playlist whose persistent ID is "A1A1A1A1"\)/);
+  await assert.rejects(addTo({ kind: "album", name: "21" }));
+});
+
+// The playlist list never offers the plugin's own two playlists, so I
+// can't point a key at the queue it keeps rewriting.
+test("my playlists leave out Stream Deck Queue and Stream Deck Test", async () => {
+  music.answer = "A1\tPop\nB2\tStream Deck Queue\nC3\tStream Deck Test\nD4\tVibes";
+  assert.deepEqual((await playlists()).map((p) => p.name), ["Pop", "Vibes"]);
 });
