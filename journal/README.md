@@ -8,3 +8,4 @@ I'm building a Stream Deck plugin that controls the Music app on my Mac, the way
 | 02 | 2026-10-17 | [The queue is a playlist I keep rewriting](02-the-queue-trick.md) |
 | 03 | 2026-10-17 | [The art that comes and goes](03-the-art-that-comes-and-goes.md) |
 | 04 | 2026-10-17 | [A page for my +, and the press that only installs it](04-a-page-for-my-plus.md) |
+| 05 | 2026-10-18 | [The Chrome preview is not the deck](05-the-chrome-preview-is-not-the-deck.md) |
