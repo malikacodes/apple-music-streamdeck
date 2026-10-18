@@ -150,7 +150,7 @@ test("the strip's art tile shows, waits and dims", () => {
 // into the song in white.
 test("the multimedia bar follows what turning does", () => {
   assert.ok(pictures["multimedia playing"].includes('fill="#f2a7c3"'));
-  assert.ok(pictures["multimedia track mode"].includes('width="35" height="8" rx="4" fill="#ffffff"'));
+  assert.ok(pictures["multimedia track mode"].includes('width="57" height="8" rx="4" fill="#ffffff"'));
 });
 
 // The strip is drawn once before Music has answered. A 0 there would
@@ -231,7 +231,7 @@ test("the Saved Search strip draws no words, waiting, nothing, one and many", ()
   assert.ok(pictures["search no words"].includes(">Add search words<"));
   assert.ok(pictures["search waiting"].includes(">Searching<"));
   assert.ok(pictures["search nothing"].includes(">Nothing matches<") && pictures["search nothing"].includes("“zzzqqq”"));
-  assert.ok(pictures["search one"].includes(">1 of 1<") && pictures["search one"].includes(">Nuff Man a Come<"));
+  assert.ok(pictures["search one"].includes(">1 of 1<") && pictures["search one"].includes(">Nuff Man"));
   assert.ok(pictures["search many"].includes(">3 of 3<") && pictures["search many"].includes(">Three<"));
 });
 
@@ -261,4 +261,24 @@ test("the bar color setting is used when it's a plain hex, pink otherwise", () =
   assert.equal(barColor(undefined), "#f2a7c3");
   assert.ok(drawVolume({ volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
   assert.ok(drawMultimedia({ name: "Patient", volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
+});
+
+// One type scale for everything, taken from my Audio Dial: 15 and 22
+// for words and values, 14 for a small second line, and nothing heavier
+// than 600. Any other size or weight is a picture that drifted.
+test("every picture uses only the 14, 15 and 22 sizes and weights up to 600", () => {
+  for (const [name, svg] of Object.entries(pictures)) {
+    for (const [, size] of svg.matchAll(/font-size="(\d+)"/g)) assert.ok(["14", "15", "22"].includes(size), `${name} uses size ${size}`);
+    for (const [, weight] of svg.matchAll(/font-weight="(\d+)"/g)) assert.ok(Number(weight) <= 600, `${name} uses weight ${weight}`);
+  }
+});
+
+// The strips put words where my Audio Dial does: the name at y=30, the
+// value at y=64 and the bar at y=78, all starting at x=14.
+test("the strips put the name, value and bar in the Audio Dial's places", () => {
+  for (const name of ["volume 15", "queue live", "search many", "multimedia playing"]) {
+    assert.match(pictures[name], /<text x="14" y="30" font-size="15" font-weight="600"/, name);
+  }
+  assert.match(pictures["queue live"], /<text x="14" y="64" font-size="22" font-weight="600"[^>]*>3 of 42</);
+  assert.match(pictures["multimedia playing"], /<rect x="14" y="78" width="172" height="8" rx="4" fill="#2c2c30"\/>/);
 });

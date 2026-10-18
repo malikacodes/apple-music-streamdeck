@@ -45,6 +45,20 @@ export function fit(text, width, size) {
   return `${cut.trimEnd()}…`;
 }
 
+// The type, the same scale in all my plugins (taken from my Audio
+// Dial): a name or label is 15 at weight 600, a value is 22 at 600, a
+// notice that takes a strip over is 15 at 400, and a small second line
+// under something is 14 at 400 in the dim gray. 600 is the heaviest
+// anything gets. A name that doesn't fit is cut with fit(), never made
+// smaller.
+function words(x, y, said, { size, weight, color = WHITE, anchor }) {
+  return `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}"${anchor ? ` text-anchor="${anchor}"` : ""} fill="${color}">${safe(said)}</text>`;
+}
+const label = (x, y, said, options = {}) => words(x, y, said, { size: 15, weight: 600, ...options });
+const value = (x, y, said, options = {}) => words(x, y, said, { size: 22, weight: 600, ...options });
+const notice = (x, y, said, options = {}) => words(x, y, said, { size: 15, weight: 400, ...options });
+const small = (x, y, said, options = {}) => words(x, y, said, { size: 14, weight: 400, color: DIM, ...options });
+
 function key(inside) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" font-family="${FONT}">`,
@@ -54,20 +68,19 @@ function key(inside) {
   ].join("");
 }
 
-// A short message that takes a key over, like "Open Music". Words go on
-// their own lines when they don't fit on one, three lines at most.
+// A short message that takes a key over, like "Open Music". On a key it
+// is the key's one thing to read, so it gets the value size, 22. Words
+// go on their own lines when they don't fit on one, three lines at most.
 export function drawNotice(text) {
   const lines = [];
   for (const word of String(text).split(" ")) {
     const last = lines.length - 1;
-    if (last >= 0 && guessWidth(`${lines[last]} ${word}`, 24) <= 120) lines[last] += ` ${word}`;
+    if (last >= 0 && guessWidth(`${lines[last]} ${word}`, 22) <= 120) lines[last] += ` ${word}`;
     else lines.push(word);
   }
-  const shown = lines.slice(0, 3).map((line) => fit(line, 124, 24));
-  const top = 80 - ((shown.length - 1) * 30) / 2;
-  return key(
-    shown.map((line, i) => `<text x="72" y="${top + i * 30}" font-size="24" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(line)}</text>`).join(""),
-  );
+  const shown = lines.slice(0, 3).map((line) => fit(line, 124, 22));
+  const top = 80 - ((shown.length - 1) * 28) / 2;
+  return key(shown.map((line, i) => value(72, top + i * 28, line, { anchor: "middle" })).join(""));
 }
 
 // The shapes on the Playback key, all centered on the key.
@@ -105,7 +118,7 @@ export function drawShuffle({ on = false } = {}) {
 // dim for off, pink for the whole list, pink with a 1 for one song.
 export function drawRepeat({ mode = "off" } = {}) {
   const color = mode === "off" ? DIM : PINK;
-  const one = mode === "one" ? `<text x="72" y="82" font-size="28" font-weight="700" text-anchor="middle" fill="${PINK}">1</text>` : "";
+  const one = mode === "one" ? value(72, 80, "1", { color: PINK, anchor: "middle" }) : "";
   return key(
     `<g ${pen(color)}>` +
       `<path d="M36 70v-8c0-7 5-12 12-12h54"/><path d="M92 40l11 10-11 10"/>` +
@@ -136,7 +149,7 @@ function strip(inside) {
 // The strip's version of a notice: one line, in the middle. A dim one
 // is a quiet label, for while a dial is still reading what to show.
 export function drawStripNotice(text, { dim = false } = {}) {
-  return strip(`<text x="100" y="56" font-size="17" font-weight="600" text-anchor="middle" fill="${dim ? DIM : WHITE}">${safe(fit(text, 180, 17))}</text>`);
+  return strip(notice(100, 56, fit(text, 180, 15), { color: dim ? DIM : WHITE, anchor: "middle" }));
 }
 
 // The volume bar, the same as my Audio Dial's so the two dials match
@@ -168,8 +181,8 @@ export function drawVolume({ volume, muted = false, color } = {}) {
   const level = known ? Math.round(Math.max(0, Math.min(100, volume))) : 0;
   const shown = muted ? "Muted" : known ? `${level}%` : "";
   return strip(
-    `<text x="14" y="30" font-size="15" font-weight="600" fill="${WHITE}">Music</text>` +
-      `<text x="14" y="64" font-size="22" font-weight="600" fill="${muted ? DIM : WHITE}">${shown}</text>` +
+    label(14, 30, "Music") +
+      value(14, 64, shown, { color: muted ? DIM : WHITE }) +
       bar({ x: 14, y: 78, width: 172, share: level / 100, color: muted ? DIM : barColor(color) }),
   );
 }
@@ -197,22 +210,27 @@ function tile({ art, x, y, size, radius, dim = false, faded = false, id }) {
   );
 }
 
-// The Multimedia dial's strip: the art top left, the artist next to
-// it, and the song's name along the bottom, where it gets the whole
-// width of the strip. Next to the art there's only room for a few
-// letters, and a song name cut to "Get Me So…" isn't much use.
-// The bar is the volume when the dial turns the volume, and how far into
-// the song I am when it skips, so it always shows what a turn changes.
+// Strips with a song's art keep the Audio Dial's places for the words
+// (name at y=30, value at y=64, bar at y=78, all from x=14), so the art
+// moves to the right. It sits a little down from the top: in a dial
+// stack, Stream Deck draws its own icon in the top right corner.
+const ART_TILE = { x: 146, y: 20, size: 40, radius: 10 };
+const TEXT_W = 124;
+
+// The Multimedia dial's strip: the song and the artist under it, the
+// art on the right, and the bar along the bottom. The bar is the volume
+// when the dial turns the volume, and how far into the song I am when
+// it skips, so it always shows what a turn changes.
 export function drawMultimedia({ art, name, artist, playing = false, volume = 0, muted = false, position = 0, duration = 0, turns = "volume", color } = {}) {
-  const parts = [tile({ art, x: 12, y: 8, size: 58, radius: 12, dim: Boolean(art) && !playing, id: "art" })];
+  const parts = [tile({ art, ...ART_TILE, dim: Boolean(art) && !playing, id: "art" })];
   if (!name) {
-    parts.push(`<text x="82" y="44" font-size="15" font-weight="600" fill="${DIM}">No track</text>`);
+    parts.push(notice(14, 30, "No track", { color: DIM }));
     return strip(parts.join(""));
   }
-  parts.push(`<text x="82" y="30" font-size="13" fill="${DIM}">${safe(fit(artist ?? "", 106, 13))}</text>`);
-  if (turns === "track") parts.push(bar({ x: 82, y: 46, width: 104, share: duration ? position / duration : 0, color: WHITE }));
-  else parts.push(bar({ x: 82, y: 46, width: 104, share: volume / 100, color: muted ? DIM : barColor(color) }));
-  parts.push(`<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(name, 176, 15))}</text>`);
+  parts.push(label(14, 30, fit(name, TEXT_W, 15)));
+  parts.push(small(14, 52, fit(artist ?? "", TEXT_W, 14)));
+  if (turns === "track") parts.push(bar({ x: 14, y: 78, width: 172, share: duration ? position / duration : 0, color: WHITE }));
+  else parts.push(bar({ x: 14, y: 78, width: 172, share: volume / 100, color: muted ? DIM : barColor(color) }));
   return strip(parts.join(""));
 }
 
@@ -235,38 +253,29 @@ export function drawNowPlaying({ art, id, playing = false } = {}) {
 // tile while it's the one playing. A key I haven't picked a playlist for
 // yet says so, dimmed.
 export function drawPlayPlaylist({ name, art, playing = false } = {}) {
-  if (!name) {
-    return key(
-      `<text x="72" y="66" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">Pick a</text>` +
-        `<text x="72" y="92" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">playlist</text>`,
-    );
-  }
+  if (!name) return key(value(72, 66, "Pick a", { color: DIM, anchor: "middle" }) + value(72, 94, "playlist", { color: DIM, anchor: "middle" }));
   const ring = playing ? `<rect x="23" y="5" width="98" height="98" rx="26" fill="none" stroke="${PINK}" stroke-width="4"/>` : "";
-  return key(
-    tile({ art, x: 28, y: 10, size: 88, radius: 22, id: "art" }) +
-      ring +
-      `<text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(name, 130, 17))}</text>`,
-  );
+  return key(tile({ art, x: 28, y: 10, size: 88, radius: 22, id: "art" }) + ring + label(72, 130, fit(name, 130, 15), { anchor: "middle" }));
 }
 
-// The Play Collection dial: the highlighted playlist's tile in the
-// middle, the ones either side of it faded, and its whole name along
-// the bottom. Names don't fit under three tiles, so turning picks one
-// and that one gets the full width.
+// The Play Collection dial: the highlighted playlist's whole name in
+// the name's place at the top, its tile under it in the middle and the
+// ones either side faded. Names don't fit under three tiles, so turning
+// picks one and that one gets the full width.
 export function drawCollection({ items = [], at = 0, empty = "No playlists" } = {}) {
   if (items.length === 0) return drawStripNotice(empty);
   const pick = (offset) => items[(((at + offset) % items.length) + items.length) % items.length];
-  const parts = [];
-  if (items.length > 2) parts.push(tile({ art: pick(-1).art, x: 14, y: 14, size: 44, radius: 10, faded: true, id: "before" }));
-  if (items.length > 1) parts.push(tile({ art: pick(1).art, x: 142, y: 14, size: 44, radius: 10, faded: true, id: "after" }));
-  parts.push(tile({ art: pick(0).art, x: 70, y: 6, size: 60, radius: 13, id: "here" }));
-  parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
+  const parts = [label(14, 30, fit(pick(0).name, 172, 15))];
+  if (items.length > 2) parts.push(tile({ art: pick(-1).art, x: 24, y: 48, size: 40, radius: 10, faded: true, id: "before" }));
+  if (items.length > 1) parts.push(tile({ art: pick(1).art, x: 136, y: 48, size: 40, radius: 10, faded: true, id: "after" }));
+  parts.push(tile({ art: pick(0).art, x: 74, y: 42, size: 52, radius: 12, id: "here" }));
   return strip(parts.join(""));
 }
 
 // The Queue dial. When the music is coming from my queue: the
-// highlighted song's tile, "3 of 42" and the artist next to it, and its
-// name along the bottom. The number is pink when it's the song up next.
+// highlighted song's name, "3 of 42" as the value with the artist under
+// it, and its art on the right. The number is pink when it's the song up
+// next.
 // When it isn't my queue (Music's own window, a catalogue stream), it
 // says how to get one and shows only the current song's art, because
 // anything more would be a guess.
@@ -276,18 +285,16 @@ export function drawCollection({ items = [], at = 0, empty = "No playlists" } = 
 export function drawQueue({ view = { live: false }, art, now = {} } = {}) {
   if (!view.live) {
     const lines = view.musicShuffle ? ["Music's own", "shuffle is on"] : ["Play from a dial", "to see your", "queue"];
-    if (!now.id) return strip(lines.map((line, i) => `<text x="100" y="${34 + i * 20}" font-size="15" font-weight="600" text-anchor="middle" fill="${DIM}">${line}</text>`).join(""));
-    return strip(
-      tile({ art: now.art, x: 12, y: 21, size: 58, radius: 12, id: "now" }) +
-        lines.map((line, i) => `<text x="82" y="${36 + i * 18}" font-size="14" font-weight="600" fill="${DIM}">${line}</text>`).join(""),
-    );
+    const top = 54 - ((lines.length - 1) * 20) / 2;
+    if (!now.id) return strip(lines.map((line, i) => notice(100, top + i * 20, line, { anchor: "middle" })).join(""));
+    return strip(tile({ art: now.art, ...ART_TILE, id: "now" }) + lines.map((line, i) => notice(14, top + i * 20, line)).join(""));
   }
   if (view.last) return drawStripNotice("End of the queue");
   return strip(
-    tile({ art, x: 12, y: 8, size: 58, radius: 12, id: "next" }) +
-      `<text x="82" y="30" font-size="13" fill="${view.next ? PINK : DIM}">${view.number} of ${view.total}</text>` +
-      `<text x="82" y="52" font-size="13" fill="${DIM}">${safe(fit(view.track.artist ?? "", 106, 13))}</text>` +
-      `<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(view.track.name, 176, 15))}</text>`,
+    tile({ art, ...ART_TILE, id: "next" }) +
+      label(14, 30, fit(view.track.name, TEXT_W, 15)) +
+      value(14, 64, `${view.number} of ${view.total}`, { color: view.next ? PINK : WHITE }) +
+      small(14, 86, fit(view.track.artist ?? "", 172, 14)),
   );
 }
 
@@ -295,16 +302,10 @@ export function drawQueue({ view = { live: false }, art, now = {} } = {}) {
 // along the bottom. After a press it's a pink tick for two seconds, so
 // I know the song went in.
 export function drawAddTo({ name, added = false } = {}) {
-  if (!name) {
-    return key(
-      `<text x="72" y="66" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">Pick a</text>` +
-        `<text x="72" y="92" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">playlist</text>`,
-    );
-  }
-  if (added) return key(`<path d="M42 70l20 20 40-44" ${pen(PINK)}/><text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">Added</text>`);
+  if (!name) return key(value(72, 66, "Pick a", { color: DIM, anchor: "middle" }) + value(72, 94, "playlist", { color: DIM, anchor: "middle" }));
+  if (added) return key(`<path d="M42 70l20 20 40-44" ${pen(PINK)}/>` + label(72, 130, "Added", { anchor: "middle" }));
   return key(
-    `<g ${pen(WHITE)}><path d="M34 36h52M34 58h52M34 80h30"/><path d="M96 66v34M79 83h34" stroke="${PINK}"/></g>` +
-      `<text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(name, 130, 17))}</text>`,
+    `<g ${pen(WHITE)}><path d="M34 36h52M34 58h52M34 80h30"/><path d="M96 66v34M79 83h34" stroke="${PINK}"/></g>` + label(72, 130, fit(name, 130, 15), { anchor: "middle" }),
   );
 }
 
@@ -322,38 +323,33 @@ function place(kind, x, y, size, color) {
   return `<g transform="translate(${x} ${y}) scale(${Number((size / 40).toFixed(3))})" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${shape}</g>`;
 }
 
-// The AirPlay dial: the highlighted place in the middle with its full
-// name along the bottom, its neighbours in the dim gray either side. The one
+// The AirPlay dial: the highlighted place's full name at the top, its
+// picture under it in the middle, its neighbours in the dim gray either
+// side. The one
 // Music is playing to now is pink, so I can see where I am before I
 // push.
 export function drawAirPlay({ devices = [], at = 0 } = {}) {
   if (devices.length === 0) return drawStripNotice("No AirPlay devices");
   const pick = (offset) => devices[(((at + offset) % devices.length) + devices.length) % devices.length];
-  const parts = [];
-  if (devices.length > 2) parts.push(place(pick(-1).kind, 18, 16, 36, pick(-1).selected ? PINK : DIM));
-  if (devices.length > 1) parts.push(place(pick(1).kind, 146, 16, 36, pick(1).selected ? PINK : DIM));
-  parts.push(place(pick(0).kind, 74, 6, 52, pick(0).selected ? PINK : WHITE));
-  parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
+  const parts = [label(14, 30, fit(pick(0).name, 172, 15))];
+  if (devices.length > 2) parts.push(place(pick(-1).kind, 26, 50, 36, pick(-1).selected ? PINK : DIM));
+  if (devices.length > 1) parts.push(place(pick(1).kind, 138, 50, 36, pick(1).selected ? PINK : DIM));
+  parts.push(place(pick(0).kind, 76, 42, 48, pick(0).selected ? PINK : WHITE));
   return strip(parts.join(""));
 }
 
-// The Saved Search dial: the highlighted song's tile, "3 of 23" and the
-// artist next to it, and the song's name along the bottom. No words yet,
+// The Saved Search dial: laid out like the Queue dial, the song's name,
+// "3 of 23" with the artist under it, and the art on the right. No words yet,
 // or nothing that matches, each say so.
-export function drawSearch({ words = "", results, at = 0, art } = {}) {
-  if (!String(words).trim()) return drawStripNotice("Add search words", { dim: true });
+export function drawSearch({ words: searched = "", results, at = 0, art } = {}) {
+  if (!String(searched).trim()) return drawStripNotice("Add search words", { dim: true });
   if (!results) return drawStripNotice("Searching", { dim: true });
-  if (results.length === 0) {
-    return strip(
-      `<text x="100" y="44" font-size="16" font-weight="600" text-anchor="middle" fill="${WHITE}">Nothing matches</text>` +
-        `<text x="100" y="68" font-size="15" text-anchor="middle" fill="${DIM}">${safe(fit(`“${String(words).trim()}”`, 180, 15))}</text>`,
-    );
-  }
+  if (results.length === 0) return strip(notice(100, 46, "Nothing matches", { anchor: "middle" }) + small(100, 68, fit(`“${String(searched).trim()}”`, 180, 14), { anchor: "middle" }));
   const song = results[at] ?? results[0];
   return strip(
-    tile({ art, x: 12, y: 8, size: 58, radius: 12, id: "found" }) +
-      `<text x="82" y="30" font-size="13" fill="${DIM}">${(results.indexOf(song) + 1)} of ${results.length}</text>` +
-      `<text x="82" y="52" font-size="13" fill="${DIM}">${safe(fit(song.artist ?? "", 106, 13))}</text>` +
-      `<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(song.name, 176, 15))}</text>`,
+    tile({ art, ...ART_TILE, id: "found" }) +
+      label(14, 30, fit(song.name, TEXT_W, 15)) +
+      value(14, 64, `${results.indexOf(song) + 1} of ${results.length}`) +
+      small(14, 86, fit(song.artist ?? "", 172, 14)),
   );
 }
