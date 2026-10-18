@@ -76,6 +76,11 @@ let reading = null;
 let artFailing = false;
 let queueRead = false;
 async function readMusic() {
+  // While a turn is sending, and for a moment after, the read is skipped
+  // (see turning() below). The timer keeps ticking, so the first tick
+  // after the turn catches up on everything, Music closing or the song
+  // changing included, and fetches the art with it.
+  if (turning()) return;
   const status = await music.status();
   if (!queueRead && status.running) {
     queueRead = true;
@@ -92,10 +97,6 @@ async function readMusic() {
     }
   }
   now = { ...status, art };
-  // Right after a turn, Music's answer is still catching up with it. See
-  // trustedVolume() below.
-  const mine = trustedVolume();
-  if (mine !== null) now.volume = mine;
   await redraw();
 }
 function startReading() {
@@ -363,7 +364,7 @@ let wantedVolume = null;
 let sendingVolume = false;
 async function sendVolume(level) {
   wantedVolume = Math.max(0, Math.min(100, level));
-  myVolume = { level: wantedVolume, at: Date.now() };
+  lastVolumeSend = Date.now();
   guess({ volume: wantedVolume });
   await redrawVolume();
   if (sendingVolume) return true;
@@ -373,7 +374,7 @@ async function sendVolume(level) {
     do {
       sent = wantedVolume;
       if (!(await music.setVolume(sent))) return false;
-      myVolume = { level: sent, at: Date.now() };
+      lastVolumeSend = Date.now();
     } while (wantedVolume !== sent);
     return true;
   } finally {
@@ -382,19 +383,27 @@ async function sendVolume(level) {
   }
 }
 
-// Music's own volume lags a turn by a read or two. When the once a
-// second read landed mid-turn, its older number replaced the one I'd
-// just turned to, and the next click started from there, so the strip
-// jumped backwards. So for a second and a half after the last send (the
-// same TRUST_MS my Audio Dial uses), the turn's own number wins. After
-// that the read is trusted again, which also puts a wrong guess right.
+// A turn is in progress while a volume script is running and for a
+// second and a half after the last one (the same TRUST_MS my Audio Dial
+// uses). During that time the once a second read doesn't ask Music
+// anything, for two reasons:
+//   - Music's own volume lags a turn, so a read landing mid-turn put
+//     its older number back on the strip and the next click started
+//     from there.
+//   - Music answers one script at a time. A status read is about 380 ms,
+//     a volume change about 190, so a read that landed in the middle of
+//     a spin made every change behind it wait, and the sound caught up
+//     in lurches.
+// After the window the read is trusted again, which also puts a wrong
+// guess right.
 const TRUST_MS = 1500;
-let myVolume = null;
-function trustedVolume() {
-  if (!myVolume) return null;
-  if (sendingVolume || Date.now() - myVolume.at < TRUST_MS) return myVolume.level;
-  myVolume = null;
-  return null;
+let lastVolumeSend = 0;
+// If the Mac's clock is set back (a time zone change, a sync), "since"
+// goes negative, and without the >= 0 the read would be skipped until
+// the clock caught up again.
+function turning() {
+  const since = Date.now() - lastVolumeSend;
+  return sendingVolume || (since >= 0 && since < TRUST_MS);
 }
 
 // Only the dials that show the volume: Volume, and Multimedia when its

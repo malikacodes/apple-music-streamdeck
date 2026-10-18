@@ -67,6 +67,9 @@ mock.module(new URL("../src/run.js", import.meta.url).href, {
         music.opened++;
         return { stdout: "" };
       }
+      // A test can hold a volume change in flight, the way a slow Music
+      // keeps one waiting.
+      if (music.hold && args.at(-1).includes("set sound volume")) await music.hold;
       return { stdout: `${answer(args.at(-1))}\n` };
     },
   },
@@ -108,12 +111,16 @@ function leave(key) {
   deck.keys.splice(deck.keys.indexOf(key), 1);
   kind(key.manifestId.split(".").pop()).onWillDisappear({ action: key });
 }
-// Fake clocks for the timer, and for Date too when a test hands in a
-// starting time, so "a second and a half later" takes no real time.
+// Fake clocks for the timer and for Date, so "a second and a half
+// later" takes no real time. Each test starts its clock far past the
+// last one, so a turn in one test can't leave the next one inside its
+// skip-the-read window.
+let lastClock = 10_000_000;
 function start(t, { clock } = {}) {
-  t.mock.timers.enable(clock === undefined ? { apis: ["setInterval"] } : { apis: ["setInterval", "Date"], now: clock });
+  lastClock += 10_000_000;
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: clock ?? lastClock });
   for (const key of [...deck.keys]) leave(key);
-  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, lagging: false, sent: null });
+  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, lagging: false, sent: null, hold: null });
   deck.switched = [];
   deck.sentToPage = [];
   deck.devices = [xl, plus];
@@ -293,4 +300,48 @@ test("a turn redraws the volume dials only", async (t) => {
   assert.equal(media.pictures.length, before.media + 1);
   assert.equal(shuffle.pictures.length, before.shuffle);
   for (const key of [volume, media, shuffle]) leave(key);
+});
+
+// Music answers one script at a time, so a status read landing mid-spin
+// made every volume change behind it wait. While a change is in flight,
+// and for the window after, the poll ticks without asking Music; after
+// the window it reads again and catches up.
+test("the poll skips its read while a volume change is in flight, then reads again", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  let release;
+  music.hold = new Promise((done) => (release = done));
+  const turned = kind("volume").onDialRotate({ action: volume, payload: { settings: {}, ticks: 1 } });
+  await settle();
+  const before = music.reads;
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(music.reads, before, "no status script while the change is in flight");
+  music.hold = null;
+  release();
+  await turned;
+  await settle();
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(music.reads, before, "still none inside the window");
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(music.reads, before + 1, "the first tick after the window reads again");
+  leave(volume);
+});
+
+// A skipped read mustn't hide Music closing for long: the first read
+// after the window sees it, and every key says Open Music again.
+test("Music closing mid-turn shows up on the first read after the window", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  await turn(volume, 1);
+  music.running = false;
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.ok(!volume.pictures.at(-1).includes("Open Music"), "inside the window the read is skipped");
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.ok(volume.pictures.at(-1).includes("Open Music"));
+  leave(volume);
 });

@@ -50,6 +50,10 @@ The fix doesn't ask the deck to clip anything. It draws the picture square, then
 
 I checked it in the Stream Deck app's own window this time, not in Chrome. Curved. 🎉
 
+## Later that day: the dial still lurched
+
+Spun fast, the sound still caught up in jumps. I timed it: one volume change is about 190 ms, a status read about 380, and Music answers one script at a time. So the once-a-second read could land in the middle of a spin and make the next change wait. Now the read just sits out a turn and catches up after. Ten changes in a row went from 2.0 s with a worst click of 321 ms to 1.8 s with a worst of 210. Most of the time left is the 190 ms itself, and about 63 ms of that is just osascript starting up.
+
 ## What I learned
 
 The Chrome preview isn't the deck. It's a good first look, and then the only proof is the real thing.
