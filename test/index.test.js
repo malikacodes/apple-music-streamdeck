@@ -1,0 +1,206 @@
+import { test, mock } from "node:test";
+import assert from "node:assert/strict";
+
+// index.js runs here for real, with two stand-ins: a pretend Stream
+// Deck SDK (the deck, its keys, profile switching), and a pretend Music
+// behind run.js that answers osascript the way the real app does and
+// remembers what it was told. music.js, queue.js, draw.js and poll.js
+// are all the real files.
+const deck = { keys: [], instances: [], switched: [], sentToPage: [], devices: [] };
+const music = { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0 };
+
+class SingletonAction {
+  // Like the real SDK: the keys on screen that belong to this action.
+  get actions() {
+    return deck.keys.filter((key) => key.manifestId === this.manifestId);
+  }
+}
+mock.module("@elgato/streamdeck", {
+  exports: {
+    default: {
+      logger: { setLevel() {}, error() {}, warn() {}, info() {} },
+      actions: { registerAction: (it) => deck.instances.push(it) },
+      get devices() {
+        return deck.devices;
+      },
+      profiles: { switchToProfile: async (id, profile) => deck.switched.push({ id, profile }) },
+      ui: { sendToPropertyInspector: async (message) => deck.sentToPage.push(message) },
+      connect() {},
+    },
+    action: ({ UUID }) => (cls) =>
+      class extends cls {
+        manifestId = UUID;
+      },
+    SingletonAction,
+  },
+});
+
+// Music's side. The status line is built the same way the real script
+// builds it; commands change what Music remembers.
+function answer(script) {
+  if (!music.running) return "closed";
+  if (script.includes("set fields to")) {
+    music.reads = (music.reads ?? 0) + 1;
+    return [music.state, music.volume, false, music.shuffle, music.repeat, 3, 189, "1E4696F2D8590BD3", music.favorited, "40CBB8B373F96E88", 7, "Get Me Some of That", "Thomas Rhett", "It Goes Like This"].join("\t");
+  }
+  if (script.includes("artwork")) return "none";
+  if (script.includes("every user playlist")) return "A1A1A1A1\tPop\nB2B2B2B2\tOldies\nC3C3C3C3\tStream Deck Queue";
+  if (script.includes("album artist")) return "21\tAdele\tAdele\n21\tAdele\tAdele\nPurpose\t\tJustin Bieber";
+  if (script.includes("Stream Deck Queue")) return "none";
+  let found;
+  if ((found = script.match(/set song repeat to (\w+)/))) music.repeat = found[1];
+  if ((found = script.match(/set sound volume to (\d+)/))) music.volume = Number(found[1]);
+  if ((found = script.match(/set shuffle enabled to (\w+)/))) music.shuffle = found[1] === "true";
+  if ((found = script.match(/set favorited of current track to (\w+)/))) music.favorited = found[1] === "true";
+  return "";
+}
+mock.module(new URL("../src/run.js", import.meta.url).href, {
+  exports: {
+    COMMAND_MS: 3000,
+    run: async (file, args) => {
+      if (file === "/usr/bin/open") {
+        music.opened++;
+        return { stdout: "" };
+      }
+      return { stdout: `${answer(args.at(-1))}\n` };
+    },
+  },
+});
+await import("../src/index.js");
+
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((done) => setImmediate(done));
+};
+const kind = (name) => deck.instances.find((it) => it.manifestId === `com.malikacodes.apple-music.${name}`);
+const xl = { id: "xl-1", type: 2, isConnected: true };
+const plus = { id: "plus-1", type: 7, isConnected: true };
+
+let next = 0;
+async function appear(name, settings = {}, device = xl) {
+  const key = { id: `key${next++}`, manifestId: `com.malikacodes.apple-music.${name}`, device, pictures: [], alerts: 0 };
+  key.setImage = async (picture) => key.pictures.push(Buffer.from(picture.split(",")[1], "base64").toString());
+  key.setFeedback = async ({ canvas }) => key.pictures.push(Buffer.from(canvas.split(",")[1], "base64").toString());
+  key.showAlert = async () => key.alerts++;
+  key.settings = settings;
+  deck.keys.push(key);
+  await kind(name).onWillAppear({ action: key, payload: { settings } });
+  await settle();
+  return key;
+}
+const press = async (key) => {
+  await kind(key.manifestId.split(".").pop()).onKeyDown({ action: key, payload: { settings: key.settings } });
+  await settle();
+};
+const push = async (key) => {
+  await kind(key.manifestId.split(".").pop()).onDialDown({ action: key, payload: { settings: key.settings } });
+  await settle();
+};
+// The SDK takes the key out of its list before it tells the plugin.
+function leave(key) {
+  deck.keys.splice(deck.keys.indexOf(key), 1);
+  kind(key.manifestId.split(".").pop()).onWillDisappear({ action: key });
+}
+function start(t) {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  for (const key of [...deck.keys]) leave(key);
+  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0 });
+  deck.switched = [];
+  deck.sentToPage = [];
+  deck.devices = [xl, plus];
+}
+
+// The whole point of the art key: pressed on my XL, it sends my + to the
+// Apple Music page, the one the plugin ships.
+test("the art key switches the picked deck to the Apple Music page", async (t) => {
+  start(t);
+  const art = await appear("nowplaying", { openOn: "7" });
+  await press(art);
+  assert.deepEqual(deck.switched, [{ id: "plus-1", profile: "profiles/apple-music-plus" }]);
+  assert.equal(art.alerts, 0);
+  leave(art);
+});
+
+// With the + unplugged there's nothing to switch: the yellow triangle,
+// and no switch on some other deck.
+test("with the + missing the art key shows the alert and switches nothing", async (t) => {
+  start(t);
+  deck.devices = [xl];
+  const art = await appear("nowplaying", { openOn: "7" });
+  await press(art);
+  assert.deepEqual(deck.switched, []);
+  assert.equal(art.alerts, 1);
+  leave(art);
+});
+
+// Repeat has three states on a deck that knows two, so the plugin does
+// the counting: off, all, one, and back to off, one press each.
+test("Repeat goes off, all, one, off", async (t) => {
+  start(t);
+  const repeat = await appear("repeat");
+  const seen = [];
+  for (let i = 0; i < 3; i++) {
+    await press(repeat);
+    seen.push(music.repeat);
+  }
+  assert.deepEqual(seen, ["all", "one", "off"]);
+  leave(repeat);
+});
+
+// Music won't let a script mute it, so the Volume dial's push goes to 0
+// and remembers the level, and the next push puts it back.
+test("the Volume dial mutes to 0 and comes back to where it was", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  await push(volume);
+  assert.equal(music.volume, 0);
+  assert.ok(volume.pictures.at(-1).includes(">Muted<"));
+  await push(volume);
+  assert.equal(music.volume, 40);
+  assert.ok(volume.pictures.at(-1).includes(">40<"));
+  leave(volume);
+});
+
+// Music closed: every key says so, and a press opens Music instead of
+// doing its job.
+test("with Music closed the keys say Open Music and a press opens it", async (t) => {
+  start(t);
+  music.running = false;
+  const shuffle = await appear("shuffle");
+  assert.ok(shuffle.pictures.at(-1).includes(">Open<") && shuffle.pictures.at(-1).includes(">Music<"));
+  await press(shuffle);
+  assert.equal(music.opened, 1);
+  assert.equal(music.shuffle, false, "shuffle wasn't touched");
+  leave(shuffle);
+});
+
+// The Play Playlist settings page asks for its dropdown and gets my
+// playlists then my albums, as two groups, without the plugin's own
+// queue playlist and with each album once.
+test("the Play Playlist page gets playlists and albums as two groups", async (t) => {
+  start(t);
+  const key = await appear("playplaylist", {}, plus);
+  assert.ok(key.pictures.at(-1).includes(">Pick a<"));
+  await kind("playplaylist").onSendToPlugin({ action: key, payload: { event: "getPlaylists" } });
+  const [sent] = deck.sentToPage;
+  assert.equal(sent.event, "getPlaylists");
+  assert.deepEqual(sent.items.map((group) => group.label), ["Playlists", "Albums"]);
+  assert.deepEqual(sent.items[0].children.map((row) => row.label), ["Pop", "Oldies"]);
+  assert.deepEqual(sent.items[1].children.map((row) => row.label), ["21, Adele", "Purpose, Justin Bieber"]);
+  assert.deepEqual(JSON.parse(sent.items[0].children[0].value), { kind: "playlist", id: "A1A1A1A1", name: "Pop" });
+  leave(key);
+});
+
+// The once a second read stops when the last key leaves, so the plugin
+// isn't asking Music anything with nothing on the deck.
+test("the status read runs once a second, and stops when the last key leaves", async (t) => {
+  start(t);
+  const key = await appear("favorite");
+  const first = music.reads;
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(music.reads, first + 1, "one read a second while the key shows");
+  leave(key);
+  t.mock.timers.tick(3000);
+  await settle();
+  assert.equal(music.reads, first + 1, "no reads after it left");
+});

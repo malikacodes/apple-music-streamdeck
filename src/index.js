@@ -17,6 +17,7 @@ import {
   drawStripNotice,
   drawVolume,
 } from "./draw.js";
+import { deckChoices, whereToOpen } from "./decks.js";
 import * as music from "./music.js";
 import { poll } from "./poll.js";
 import * as queue from "./queue.js";
@@ -292,8 +293,26 @@ class NowPlaying extends MusicAction {
     return drawNowPlaying(status);
   }
 
-  press() {
-    return true;
+  // A press sends my + to the Apple Music page, whatever Music is doing,
+  // so it skips the "Open Music" rule the other keys follow. A plugin
+  // can only open pages it ships with, which is why it's always this
+  // page. The first press ever only installs it (Stream Deck asks), and
+  // the second press is the one that switches.
+  async onKeyDown(ev) {
+    const where = whereToOpen(ev.payload.settings?.openOn, ev.action.device, [...streamDeck.devices]);
+    if (!where) return ev.action.showAlert();
+    try {
+      await streamDeck.profiles.switchToProfile(where.deck, where.profile);
+    } catch (err) {
+      streamDeck.logger.error(`Couldn't open the Apple Music page: ${err.message}`);
+      await ev.action.showAlert();
+    }
+  }
+
+  // The settings page asks "getDecks" for the rows of its "Open on" menu.
+  onSendToPlugin(ev) {
+    if (ev.payload?.event !== "getDecks") return;
+    return streamDeck.ui.sendToPropertyInspector({ event: "getDecks", items: deckChoices([...streamDeck.devices]) }).catch(() => {});
   }
 }
 

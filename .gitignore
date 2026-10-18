@@ -1,3 +1,7 @@
 node_modules/
 *.log
 logs/
+
+# Built by "npm run profiles". The Home key in it points at my own Home
+# profile on this Mac, so it stays here.
+com.malikacodes.apple-music.sdPlugin/profiles/

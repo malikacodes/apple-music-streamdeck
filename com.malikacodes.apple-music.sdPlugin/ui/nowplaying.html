@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- A press opens the Apple Music page on the deck picked here. The
+         plugin fills the menu with the decks that are plugged in, and the
+         refresh button asks again after I plug one in. The very first
+         press asks Stream Deck to install the page, and the second one
+         is the one that switches. -->
+    <sdpi-item label="Open on">
+      <sdpi-select setting="openOn" datasource="getDecks" default="7" show-refresh></sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

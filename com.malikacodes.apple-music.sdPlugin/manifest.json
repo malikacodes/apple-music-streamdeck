@@ -127,6 +127,7 @@
       "Icon": "imgs/nowplaying",
       "Controllers": ["Keypad"],
       "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/nowplaying.html",
       "States": [
         {
           "Image": "imgs/nowplaying-key"
@@ -189,6 +190,15 @@
           "Image": "imgs/queue-dial"
         }
       ]
+    }
+  ],
+  "Profiles": [
+    {
+      "Name": "profiles/apple-music-plus",
+      "DeviceType": 7,
+      "Readonly": false,
+      "DontAutoSwitchWhenInstalled": true,
+      "AutoInstall": true
     }
   ]
 }
