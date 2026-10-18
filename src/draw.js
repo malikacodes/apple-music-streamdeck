@@ -164,7 +164,7 @@ export function drawVolume({ volume, muted = false } = {}) {
 // With no art yet, it's an outline with a note in it. Paused art is
 // dimmed: dark over black, not gray, so it still passes the black test.
 const NOTE = (x, y, s, color) =>
-  `<g transform="translate(${x} ${y}) scale(${s})" fill="${color}"><path d="M10 21V7l11-2.5v14" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/><ellipse cx="7.5" cy="21" rx="3.5" ry="2.8"/><ellipse cx="18.5" cy="18.5" rx="3.5" ry="2.8"/></g>`;
+  `<g transform="translate(${x} ${y}) scale(${Number(s.toFixed(3))})" fill="${color}"><path d="M10 21V7l11-2.5v14" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/><ellipse cx="7.5" cy="21" rx="3.5" ry="2.8"/><ellipse cx="18.5" cy="18.5" rx="3.5" ry="2.8"/></g>`;
 
 function tile({ art, x, y, size, radius, dim = false, id }) {
   if (!art) {
@@ -193,4 +193,18 @@ export function drawMultimedia({ art, name, artist, playing = false, volume = 0,
   else parts.push(bar({ x: 82, y: 48, width: 104, share: volume / 100, color: muted ? DIM : PINK }));
   parts.push(`<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(name, 176, 15))}</text>`);
   return strip(parts.join(""));
+}
+
+// The Now Playing key for my XL. The art fills a rounded tile with a
+// little black around it, the same numbers as my app-icon keys, so it
+// sits right next to them. Paused, the art dims and a pause sign sits
+// in the corner on a black circle. With art still on its way it's the
+// empty tile, and with nothing loaded at all it's only a dim note.
+export function drawNowPlaying({ art, id, playing = false } = {}) {
+  if (!id) return key(NOTE(30, 30, 3, DIM));
+  if (!art) return key(tile({ art: null, x: 12, y: 12, size: 120, radius: 32 }));
+  const paused = playing
+    ? ""
+    : `<circle cx="110" cy="110" r="22" fill="${BLACK}"/><rect x="101" y="99" width="6" height="22" rx="2" fill="${WHITE}"/><rect x="113" y="99" width="6" height="22" rx="2" fill="${WHITE}"/>`;
+  return key(tile({ art, x: 12, y: 12, size: 120, radius: 32, dim: !playing, id: "art" }) + paused);
 }

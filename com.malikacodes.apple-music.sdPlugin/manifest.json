@@ -119,6 +119,19 @@
           "Image": "imgs/multimedia-dial"
         }
       ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.nowplaying",
+      "Name": "Now Playing",
+      "Tooltip": "The album art of what is playing. Press to open the Apple Music page on another deck",
+      "Icon": "imgs/nowplaying",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [
+        {
+          "Image": "imgs/nowplaying-key"
+        }
+      ]
     }
   ]
 }

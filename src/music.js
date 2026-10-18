@@ -1,6 +1,9 @@
 // Every question I ask the Music app lives in this file, and nothing else
 // in the plugin runs osascript. Each one goes through run.js, so each
 // gets its three second limit.
+import { mkdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { run } from "./run.js";
 
 // Talking to an app by name starts it if it isn't open. I don't want
@@ -160,4 +163,88 @@ export async function setFavorite(on) {
 export async function setVolume(level) {
   const safeLevel = Math.round(Math.max(0, Math.min(100, Number(level) || 0)));
   return (await ask(`    set sound volume to ${safeLevel}`)) !== CLOSED;
+}
+
+// Album art. Music hands it over as the picture's raw bytes, about half
+// a megabyte for a streamed song. Printed as text that's over a
+// megabyte, more than Node will take from a command by default, so the
+// script writes the bytes to a file instead. Then sips (it comes with
+// the Mac) shrinks it to 288 pixels, twice the size of a key, so the
+// picture sent to the deck is small and still sharp.
+//
+// It's JPEG for streamed songs, not PNG, so the type comes from the
+// file's first bytes rather than being assumed.
+const ART_DIR = join(tmpdir(), "com.malikacodes.apple-music");
+const ART_PX = 288;
+
+// Writing a file is the Mac's job, not Music's, so it lives in a handler
+// outside the tell. It can't be called "save": inside the tell, Music
+// thinks that's its own save command and the script won't even compile.
+const SAVE = `
+on keepArt(bytes, path)
+  set f to open for access POSIX file path with write permission
+  try
+    set eof f to 0
+    write bytes to f
+  end try
+  close access f
+end keepArt`;
+
+// Only digits and A to F are allowed in a persistent ID, so nothing
+// else from the status line can end up inside the script.
+const isId = (id) => /^[0-9A-F]{1,32}$/i.test(String(id));
+
+// The art for one song, as a data URI, or null when Music has none.
+// "moved" means the song changed between the status read and this one,
+// so there's nothing to say about this song yet, and that's undefined.
+async function fetchArt(id) {
+  await mkdir(ART_DIR, { recursive: true });
+  const full = join(ART_DIR, "art");
+  const small = join(ART_DIR, "art-small");
+  const answer = await ask(
+    `    set t to current track
+    if persistent ID of t is not "${id}" then return "moved"
+    if (count artworks of t) is 0 then return "none"
+    my keepArt(data of artwork 1 of t, "${full}")
+    return "saved"`,
+    { handlers: SAVE },
+  );
+  if (answer === "moved" || answer === CLOSED) return undefined;
+  if (answer !== "saved") return null;
+  await run("/usr/bin/sips", ["-Z", String(ART_PX), full, "--out", small]);
+  const bytes = await readFile(small);
+  const type = bytes[0] === 0x89 ? "png" : "jpeg";
+  return `data:image/${type};base64,${bytes.toString("base64")}`;
+}
+
+// What I've already got, by persistent ID. The once a second read only
+// asks Music for art when the song changes, never on every tick.
+//
+// The same streamed song can come back with no art one minute and art
+// the next, so a song with none gets one more try ten seconds later.
+// After that it keeps the placeholder: asking every second would be a
+// script a second for a picture that isn't coming. The retry rides on
+// the once a second read, so it needs no timer of its own.
+export const ART_RETRY_MS = 10000;
+const ART_KEEP = 50;
+const arts = new Map();
+
+export async function artwork(id, clock = Date.now()) {
+  if (!isId(id)) return null;
+  const known = arts.get(id);
+  if (known?.art) return known.art;
+  if (known && (known.tries >= 2 || clock - known.triedAt < ART_RETRY_MS)) return null;
+  // A fetch that fails (sips choking on a strange picture) counts as a
+  // try with no art, so a broken picture isn't asked for every second.
+  // The error still goes up, so it lands in the log.
+  let art = null;
+  try {
+    art = await fetchArt(id);
+    if (art === undefined) return null;
+  } finally {
+    if (art !== undefined) arts.set(id, { art, tries: (known?.tries ?? 0) + 1, triedAt: clock });
+    // Fifty songs of art is plenty. The oldest goes first.
+    if (arts.size > ART_KEEP) arts.delete(arts.keys().next().value);
+  }
+  return art;
 }

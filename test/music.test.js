@@ -1,21 +1,42 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { copyFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
 // The only fake here is Music itself. run.js is swapped for a stand-in
 // osascript that writes down every script it was handed and answers with
-// whatever the test says Music would. Everything in music.js is real.
+// whatever the test says Music would. Everything in music.js is real,
+// and so is every other command: sips really shrinks the art.
 const music = { scripts: [], answer: "" };
+const realRun = promisify(execFile);
 mock.module(new URL("../src/run.js", import.meta.url).href, {
   namedExports: {
     COMMAND_MS: 3000,
-    run: async (file, args) => {
+    run: async (file, args, options) => {
+      if (file !== "/usr/bin/osascript") return realRun(file, args, options);
       music.scripts.push(args.at(-1));
-      const answer = typeof music.answer === "function" ? music.answer(args.at(-1)) : music.answer;
+      const answer = typeof music.answer === "function" ? await music.answer(args.at(-1)) : music.answer;
       return { stdout: `${answer}\n` };
     },
   },
 });
-const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, NOT_RUNNING } = await import("../src/music.js");
+const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, artwork, ART_RETRY_MS, NOT_RUNNING } = await import("../src/music.js");
+
+// Music's side of an art request, the way it behaves on my Mac: it writes
+// the picture's bytes to the file the script names and says "saved", or
+// says "none" when the song has no art right now. A real JPEG stands in
+// for the album cover.
+const FIXTURE = new URL("fixtures/art.jpg", import.meta.url).pathname;
+function artMusic(has) {
+  return async (script) => {
+    if (!script.includes("artwork")) return "";
+    if (!has()) return "none";
+    await copyFile(FIXTURE, script.match(/my keepArt\(data of artwork 1 of t, "([^"]+)"\)/)[1]);
+    return "saved";
+  };
+}
+const artAsks = () => music.scripts.filter((script) => script.includes("artwork")).length;
 
 // Real lines, copied from what the status script printed on my Mac.
 const PAUSED = "paused\t100\tfalse\ttrue\toff\t1\t189\t1E4696F2D8590BD3\tfalse\tFBD9055305241C1B\t2\tGet Me Some of That\tThomas Rhett\tIt Goes Like This";
@@ -119,4 +140,58 @@ test("a repeat mode that isn't one of the three becomes off", async () => {
   music.answer = "";
   await setRepeat('one" & do shell script "x');
   assert.match(music.scripts.at(-1), /set song repeat to off/);
+});
+
+// The art is asked for when the song changes, not on every one-second
+// read. Asking every second would be half a megabyte a second for a
+// picture that hasn't changed.
+test("art is fetched once per song and handed back as a small JPEG", async () => {
+  music.answer = artMusic(() => true);
+  const before = artAsks();
+  const first = await artwork("AAAA1111", 0);
+  assert.match(first, /^data:image\/jpeg;base64,\/9j\//);
+  assert.equal(await artwork("AAAA1111", 1000), first);
+  assert.equal(artAsks() - before, 1);
+  await artwork("BBBB2222", 2000);
+  assert.equal(artAsks() - before, 2, "a new song asks again");
+});
+
+// Streamed songs sometimes have no art for a while. One more try ten
+// seconds later, then the placeholder stays, so a song with no art
+// doesn't cost a script every second.
+test("a song with no art gets exactly one retry, ten seconds later", async () => {
+  let has = false;
+  music.answer = artMusic(() => has);
+  const before = artAsks();
+  assert.equal(await artwork("CCCC3333", 0), null);
+  assert.equal(await artwork("CCCC3333", ART_RETRY_MS - 1), null);
+  assert.equal(artAsks() - before, 1, "no second ask inside ten seconds");
+  has = true;
+  assert.match(await artwork("CCCC3333", ART_RETRY_MS), /^data:image\/jpeg/);
+  assert.equal(artAsks() - before, 2);
+
+  const after = artAsks();
+  has = false;
+  await artwork("DDDD4444", 0);
+  await artwork("DDDD4444", ART_RETRY_MS);
+  await artwork("DDDD4444", ART_RETRY_MS * 5);
+  assert.equal(artAsks() - after, 2, "two tries and that's all");
+});
+
+// The song changed between the status read and the art request. That
+// isn't "no art", so it mustn't use up the song's tries.
+test("a song that changed mid-request isn't counted as having no art", async () => {
+  music.answer = async (script) => (script.includes("artwork") ? "moved" : "");
+  assert.equal(await artwork("EEEE5555", 0), null);
+  music.answer = artMusic(() => true);
+  assert.match(await artwork("EEEE5555", 1), /^data:image\/jpeg/);
+});
+
+// The ID goes inside a script, so anything that isn't a plain persistent
+// ID is refused before Music is asked.
+test("a strange persistent ID never reaches a script", async () => {
+  const before = music.scripts.length;
+  assert.equal(await artwork('A" & quit & "', 0), null);
+  assert.equal(await artwork("", 0), null);
+  assert.equal(music.scripts.length, before);
 });

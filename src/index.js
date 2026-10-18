@@ -2,7 +2,7 @@
 // sends pictures back. The drawing is in draw.js and everything that asks
 // Music something is in music.js.
 import streamDeck, { action, SingletonAction } from "@elgato/streamdeck";
-import { drawFavorite, drawMultimedia, drawNotice, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume } from "./draw.js";
+import { drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume } from "./draw.js";
 import * as music from "./music.js";
 import { poll } from "./poll.js";
 
@@ -47,9 +47,24 @@ async function redraw() {
 // The once a second read. It only runs while something of mine is on
 // the deck: the first key to show up starts it, the last one to leave
 // stops it.
+// The art is fetched in the same turn, but on its own: a song whose
+// picture won't come mustn't stop the song itself from showing. Its
+// failures are logged once, the same way poll.js does it.
 let reading = null;
+let artFailing = false;
 async function readMusic() {
-  now = await music.status();
+  const status = await music.status();
+  let art = null;
+  if (status.id) {
+    try {
+      art = await music.artwork(status.id);
+      artFailing = false;
+    } catch (err) {
+      if (!artFailing) streamDeck.logger.error(`Couldn't get the album art, so the keys show a plain tile: ${err.message}`);
+      artFailing = true;
+    }
+  }
+  now = { ...status, art };
   await redraw();
 }
 function startReading() {
@@ -213,6 +228,24 @@ class Favorite extends MusicAction {
   }
 }
 
+// The album art key for my XL. It never has words on it, so it's the
+// one key that doesn't take over with "Open Music": closed just looks
+// like nothing playing.
+class NowPlaying extends MusicAction {
+  picture(target) {
+    if (now && !now.running) return drawNowPlaying({});
+    return super.picture(target);
+  }
+
+  draw(status) {
+    return drawNowPlaying(status);
+  }
+
+  press() {
+    return true;
+  }
+}
+
 // Music won't let a script set its own mute, so muting is mine: the
 // volume goes to 0 and the level it was at is kept here, and the next
 // push puts it back. If the volume moves away from 0 some other way
@@ -324,6 +357,7 @@ register("repeat", Repeat);
 register("favorite", Favorite);
 register("volume", Volume);
 register("multimedia", Multimedia);
+register("nowplaying", NowPlaying);
 
 // connect() comes after the actions are registered.
 streamDeck.connect();

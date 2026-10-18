@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawFavorite, drawMultimedia, drawNotice, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
+import { drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
 
 // A tiny real JPEG, packed as a data URI, to stand in for album art.
 const ART = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
@@ -33,6 +33,10 @@ const pictures = {
   "multimedia track mode": drawMultimedia({ ...SONG, turns: "track", position: 60, duration: 180 }),
   "multimedia no track": drawMultimedia({}),
   "strip Music closed": drawStripNotice("Open Music"),
+  "now playing": drawNowPlaying({ id: "A1", art: ART, playing: true }),
+  "now playing paused": drawNowPlaying({ id: "A1", art: ART }),
+  "now playing art on its way": drawNowPlaying({ id: "A1" }),
+  "now playing nothing": drawNowPlaying({}),
 };
 
 // The deck is pure black, so anything else behind a picture is a gray
@@ -120,4 +124,17 @@ test("the multimedia bar follows what turning does", () => {
 // look like the volume really is all the way down.
 test("the volume strip shows no number before the first read", () => {
   assert.ok(!drawVolume({}).includes(">0<"));
+});
+
+// The XL key: art on the rounded tile, dim with a pause sign when
+// paused, the empty tile while the art is on its way, and only a dim
+// note with nothing loaded. And never any words.
+test("the Now Playing key draws art, paused, waiting and nothing", () => {
+  assert.ok(pictures["now playing"].includes(`href="${ART}"`));
+  assert.ok(pictures["now playing"].includes('rx="32"'));
+  assert.ok(!pictures["now playing"].includes("<circle"));
+  assert.ok(pictures["now playing paused"].includes('opacity="0.45"') && pictures["now playing paused"].includes("<circle"));
+  assert.ok(!pictures["now playing art on its way"].includes("<image"));
+  assert.ok(!pictures["now playing nothing"].includes("<rect x="), "no tile at all");
+  for (const name of ["now playing", "now playing paused", "now playing art on its way", "now playing nothing"]) assert.ok(!pictures[name].includes("<text"), name);
 });
