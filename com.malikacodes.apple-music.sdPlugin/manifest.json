@@ -132,6 +132,63 @@
           "Image": "imgs/nowplaying-key"
         }
       ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.playplaylist",
+      "Name": "Play Playlist",
+      "Tooltip": "Plays one playlist or album from the top",
+      "Icon": "imgs/playplaylist",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/playplaylist.html",
+      "States": [
+        {
+          "Image": "imgs/playplaylist-key"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.collection",
+      "Name": "Play Collection",
+      "Tooltip": "Turn through my playlists, push to play one",
+      "Icon": "imgs/collection",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/collection.html",
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Browse",
+          "Push": "Play",
+          "Touch": "Play"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/collection-dial"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.queue",
+      "Name": "Queue",
+      "Tooltip": "What plays next, when I played from the deck. Push to jump there",
+      "Icon": "imgs/queue",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Look ahead",
+          "Push": "Play this one",
+          "Touch": "Play this one"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/queue-dial"
+        }
+      ]
     }
   ]
 }

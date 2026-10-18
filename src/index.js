@@ -1,10 +1,25 @@
 // The only file that talks to Stream Deck. It hears presses and turns and
 // sends pictures back. The drawing is in draw.js and everything that asks
-// Music something is in music.js.
+// Music something is in music.js, with the queue's bookkeeping in
+// queue.js.
 import streamDeck, { action, SingletonAction } from "@elgato/streamdeck";
-import { drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume } from "./draw.js";
+import {
+  drawCollection,
+  drawFavorite,
+  drawMultimedia,
+  drawNotice,
+  drawNowPlaying,
+  drawPlayback,
+  drawPlayPlaylist,
+  drawQueue,
+  drawRepeat,
+  drawShuffle,
+  drawStripNotice,
+  drawVolume,
+} from "./draw.js";
 import * as music from "./music.js";
 import { poll } from "./poll.js";
+import * as queue from "./queue.js";
 
 // Keep this at "info". The "trace" level writes every message between the
 // plugin and Stream Deck into the log file, and that includes the global
@@ -47,13 +62,23 @@ async function redraw() {
 // The once a second read. It only runs while something of mine is on
 // the deck: the first key to show up starts it, the last one to leave
 // stops it.
+//
 // The art is fetched in the same turn, but on its own: a song whose
 // picture won't come mustn't stop the song itself from showing. Its
 // failures are logged once, the same way poll.js does it.
+//
+// The queue's songs are read once when the plugin starts, in case
+// there's a queue left from before, and after that only when the plugin
+// changes the queue itself.
 let reading = null;
 let artFailing = false;
+let queueRead = false;
 async function readMusic() {
   const status = await music.status();
+  if (!queueRead && status.running) {
+    queueRead = true;
+    await queue.refresh().catch((err) => streamDeck.logger.error(`Couldn't read the queue playlist: ${err.message}`));
+  }
   let art = null;
   if (status.id) {
     try {
@@ -125,7 +150,7 @@ class MusicAction extends SingletonAction {
     if (notice && notice.until > Date.now()) return say(notice.text);
     this.notices.delete(target.id);
     if (now && !now.running) return say("Open Music");
-    return this.draw(now ?? {}, this.settings.get(target.id) ?? {});
+    return this.draw(now ?? {}, this.settings.get(target.id) ?? {}, target);
   }
 
   // Only sends the picture when it changed. Most seconds nothing has,
@@ -191,12 +216,38 @@ class Playback extends MusicAction {
   }
 }
 
+// Whether a play from my keys and dials should be shuffled. When my
+// queue is playing, Music's own shuffle is off (the plugin turned it
+// off so Music plays my order), and the queue's own shuffle is the one
+// that counts.
+function queueLive() {
+  return queue.queueView(now, queue.current()).live === true;
+}
+function shuffling() {
+  if (queueLive() && queue.remembered()) return queue.remembered().shuffled;
+  return Boolean(now?.shuffle);
+}
+
+// Tells the keys and dials when a background chunk of the queue lands.
+const queueEvents = {
+  log: (line) => streamDeck.logger.error(line),
+  changed: () => redraw(),
+};
+
 class Shuffle extends MusicAction {
-  draw(status) {
-    return drawShuffle({ on: status.shuffle });
+  draw() {
+    return drawShuffle({ on: shuffling() });
   }
 
+  // While my queue plays, Music's shuffle would play my list in its own
+  // order and the Queue dial would be wrong. So the key reorders the
+  // songs that haven't played yet instead. Anywhere else, it's Music's
+  // own shuffle.
   async press(target, status) {
+    if (queueLive() && queue.remembered()) {
+      const on = !queue.remembered().shuffled;
+      return queue.reorder(status.index, on, queueEvents);
+    }
     guess({ shuffle: !status.shuffle });
     return music.setShuffle(!status.shuffle);
   }
@@ -350,6 +401,215 @@ class Multimedia extends MusicAction {
   }
 }
 
+// Art for the tiles that aren't the song playing: playlists on the
+// Play Playlist key and the Play Collection dial, songs further down
+// the Queue dial. Drawing can't wait for a script, so a tile draws
+// empty, its art is fetched one at a time, and everything redraws when
+// it lands. The newest wish goes first, and only the last few are kept,
+// so spinning past forty playlists doesn't line up forty fetches.
+const tileArt = new Map();
+const wanted = [];
+let fetchingTiles = false;
+function artFor(key, fetch) {
+  if (tileArt.has(key)) return tileArt.get(key);
+  if (!wanted.some((wish) => wish.key === key)) wanted.push({ key, fetch });
+  if (wanted.length > 6) wanted.shift();
+  void fetchTiles();
+  return null;
+}
+async function fetchTiles() {
+  if (fetchingTiles) return;
+  fetchingTiles = true;
+  try {
+    while (wanted.length > 0) {
+      const { key, fetch } = wanted.pop();
+      try {
+        tileArt.set(key, await fetch());
+      } catch (err) {
+        tileArt.set(key, null);
+        streamDeck.logger.warn(`Couldn't get a tile's art, so it stays plain: ${err.message}`);
+      }
+      await redraw();
+    }
+  } finally {
+    fetchingTiles = false;
+  }
+}
+const sourceKey = (source) => `${source.kind}:${source.id ?? source.name}:${source.artist ?? ""}`;
+const sourceArt = (source) => artFor(sourceKey(source), () => music.sourceArt(source));
+
+// Plays a playlist, album or artist through the queue, shuffled if
+// shuffle is on. "empty" gets a notice, since the press did nothing.
+async function play(kind, target, source) {
+  const result = await queue.start(source, { shuffle: shuffling(), ...queueEvents });
+  if (result === "empty") return kind.notice(target, "Nothing to play");
+  return result;
+}
+
+// Is this source the one my queue is playing from right now?
+function playingFrom(source) {
+  const from = queue.remembered()?.source;
+  return Boolean(from && queueLive() && sourceKey(from) === sourceKey(source));
+}
+
+// The Play Playlist key's choice. The settings page saves it as text
+// (JSON, so a name with a comma in it survives), and a key I've never
+// set has nothing at all, so anything that doesn't read as a playlist
+// or an album means "not picked yet".
+function pickedSource(settings) {
+  try {
+    const source = JSON.parse(settings.list);
+    if (["playlist", "album"].includes(source?.kind) && typeof source.name === "string" && source.name) return source;
+  } catch {}
+  return null;
+}
+
+class PlayPlaylist extends MusicAction {
+  draw(status, settings) {
+    const source = pickedSource(settings);
+    if (!source) return drawPlayPlaylist({});
+    return drawPlayPlaylist({ name: source.name, art: sourceArt(source), playing: playingFrom(source) });
+  }
+
+  async press(target, status, settings) {
+    const source = pickedSource(settings);
+    if (!source) return this.notice(target, "Pick a playlist");
+    return play(this, target, source);
+  }
+
+  // The settings page's dropdown asks for "getPlaylists" and gets my
+  // playlists, then my library's albums, as two groups. Other messages
+  // aren't this page's to answer.
+  async onSendToPlugin(ev) {
+    if (ev.payload?.event !== "getPlaylists") return;
+    try {
+      const [lists, records] = await Promise.all([music.playlists(), music.albums()]);
+      const item = (source, label) => ({ value: JSON.stringify(source), label });
+      await streamDeck.ui.sendToPropertyInspector({
+        event: "getPlaylists",
+        items: [
+          { label: "Playlists", children: lists.map((list) => item({ kind: "playlist", id: list.id, name: list.name }, list.name)) },
+          { label: "Albums", children: records.map((record) => item(record, `${record.name}, ${record.artist}`)) },
+        ],
+      });
+    } catch (err) {
+      streamDeck.logger.error(`Couldn't list my playlists for the settings page: ${err.message}`);
+    }
+  }
+}
+
+// Lists for the browsing dial are read when it shows up, and again when
+// it's pushed after sitting a minute, so a playlist I just made turns up
+// without a restart.
+const LIST_MS = 60000;
+
+class Collection extends MusicAction {
+  strip = true;
+  lists = new Map();
+  picks = new Map();
+  readAt = new Map();
+
+  async onWillAppear(ev) {
+    await super.onWillAppear(ev);
+    await this.load(ev.action);
+  }
+
+  async onDidReceiveSettings(ev) {
+    this.settings.set(ev.action.id, ev.payload.settings ?? {});
+    await this.load(ev.action);
+  }
+
+  browse(target) {
+    const browse = this.settings.get(target.id)?.browse;
+    return ["albums", "artists"].includes(browse) ? browse : "playlists";
+  }
+
+  async load(target) {
+    try {
+      const browse = this.browse(target);
+      const list = browse === "albums" ? await music.albums() : browse === "artists" ? await music.artists() : await music.playlists();
+      this.lists.set(target.id, list);
+      this.readAt.set(target.id, Date.now());
+    } catch (err) {
+      streamDeck.logger.error(`Couldn't read my ${this.browse(target)}: ${err.message}`);
+    }
+    await this.render(target);
+  }
+
+  // The highlighted item, remembered by what it is, not by its place,
+  // so a refreshed list doesn't move the highlight.
+  at(target) {
+    const list = this.lists.get(target.id) ?? [];
+    const picked = this.picks.get(target.id);
+    return Math.max(0, list.findIndex((item) => sourceKey(item) === picked));
+  }
+
+  // Until the list has been read once, the strip only says what it's
+  // going to show. "No playlists" there would be a fib for a second.
+  draw(status, settings, target) {
+    if (!this.lists.has(target.id)) return drawStripNotice(`My ${this.browse(target)}`, { dim: true });
+    const list = this.lists.get(target.id);
+    const at = this.at(target);
+    // Only the three tiles on the strip ask for art.
+    const items = list.map((item, i) => {
+      const near = list.length <= 3 || [0, 1, list.length - 1].includes((i - at + list.length) % list.length);
+      return { name: item.name, art: near ? sourceArt(item) : null };
+    });
+    return drawCollection({ items, at, empty: `No ${this.browse(target)}` });
+  }
+
+  turn(target, ticks) {
+    const list = this.lists.get(target.id) ?? [];
+    if (list.length === 0) return true;
+    const next = (((this.at(target) + ticks) % list.length) + list.length) % list.length;
+    this.picks.set(target.id, sourceKey(list[next]));
+    return this.render(target).then(() => true);
+  }
+
+  async press(target) {
+    if (Date.now() - (this.readAt.get(target.id) ?? 0) > LIST_MS) await this.load(target);
+    const list = this.lists.get(target.id) ?? [];
+    if (list.length === 0) return this.notice(target, `No ${this.browse(target)}`);
+    return play(this, target, list[this.at(target)]);
+  }
+}
+
+class Queue extends MusicAction {
+  strip = true;
+  picks = new Map();
+
+  async onWillAppear(ev) {
+    await super.onWillAppear(ev);
+    await queue.refresh().catch((err) => streamDeck.logger.error(`Couldn't read the queue playlist: ${err.message}`));
+    await this.render(ev.action);
+  }
+
+  // Before Music has answered once, "Play from a dial" might not be
+  // true yet, so the strip only says what it is.
+  draw(status, settings, target) {
+    if (status.running === undefined) return drawStripNotice("Queue", { dim: true });
+    const view = queue.queueView(status, queue.current(), this.picks.get(target.id));
+    const art = view.track ? artFor(view.track.id, () => music.queueArt(view.number, view.track.id)) : null;
+    return drawQueue({ view, art, now: status });
+  }
+
+  turn(target, ticks, status) {
+    const picked = queue.turnPick(status, queue.current(), this.picks.get(target.id), ticks);
+    if (picked) this.picks.set(target.id, picked);
+    return this.render(target).then(() => true);
+  }
+
+  // Plays the highlighted song. The highlight then falls back to "up
+  // next", since the song it was on is now the one playing.
+  async press(target, status) {
+    const view = queue.queueView(status, queue.current(), this.picks.get(target.id));
+    if (!view.live) return this.notice(target, "Play from a dial first");
+    if (!view.track) return true;
+    this.picks.delete(target.id);
+    return queue.jump(view.number);
+  }
+}
+
 const register = (name, Kind) => streamDeck.actions.registerAction(new (action({ UUID: `com.malikacodes.apple-music.${name}` })(Kind))());
 register("playback", Playback);
 register("shuffle", Shuffle);
@@ -358,6 +618,9 @@ register("favorite", Favorite);
 register("volume", Volume);
 register("multimedia", Multimedia);
 register("nowplaying", NowPlaying);
+register("playplaylist", PlayPlaylist);
+register("collection", Collection);
+register("queue", Queue);
 
 // connect() comes after the actions are registered.
 streamDeck.connect();

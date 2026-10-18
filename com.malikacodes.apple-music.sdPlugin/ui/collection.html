@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- What turning the dial goes through. Albums and artists come from
+         my library, so streamed songs that only live in playlists aren't
+         in those two. -->
+    <sdpi-item label="Browse">
+      <sdpi-select setting="browse" default="playlists">
+        <option value="playlists">My playlists</option>
+        <option value="albums">Albums in my library</option>
+        <option value="artists">Artists in my library</option>
+      </sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

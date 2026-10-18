@@ -132,9 +132,10 @@ function strip(inside) {
   ].join("");
 }
 
-// The strip's version of a notice: one line, in the middle.
-export function drawStripNotice(text) {
-  return strip(`<text x="100" y="56" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(text, 180, 17))}</text>`);
+// The strip's version of a notice: one line, in the middle. A dim one
+// is a quiet label, for while a dial is still reading what to show.
+export function drawStripNotice(text, { dim = false } = {}) {
+  return strip(`<text x="100" y="56" font-size="17" font-weight="600" text-anchor="middle" fill="${dim ? DIM : WHITE}">${safe(fit(text, 180, 17))}</text>`);
 }
 
 // A bar that fills from the left. The empty part is dim and the full
@@ -207,4 +208,65 @@ export function drawNowPlaying({ art, id, playing = false } = {}) {
     ? ""
     : `<circle cx="110" cy="110" r="22" fill="${BLACK}"/><rect x="101" y="99" width="6" height="22" rx="2" fill="${WHITE}"/><rect x="113" y="99" width="6" height="22" rx="2" fill="${WHITE}"/>`;
   return key(tile({ art, x: 12, y: 12, size: 120, radius: 32, dim: !playing, id: "art" }) + paused);
+}
+
+// The Play Playlist key: the playlist's tile (the art of its first
+// song) with its name along the bottom. A thin pink ring goes round the
+// tile while it's the one playing. A key I haven't picked a playlist for
+// yet says so, dimmed.
+export function drawPlayPlaylist({ name, art, playing = false } = {}) {
+  if (!name) {
+    return key(
+      `<text x="72" y="66" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">Pick a</text>` +
+        `<text x="72" y="92" font-size="20" font-weight="600" text-anchor="middle" fill="${DIM}">playlist</text>`,
+    );
+  }
+  const ring = playing ? `<rect x="23" y="5" width="98" height="98" rx="26" fill="none" stroke="${PINK}" stroke-width="4"/>` : "";
+  return key(
+    tile({ art, x: 28, y: 10, size: 88, radius: 22, id: "art" }) +
+      ring +
+      `<text x="72" y="130" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(name, 130, 17))}</text>`,
+  );
+}
+
+// The Play Collection dial: the highlighted playlist's tile in the
+// middle, the ones either side of it faded, and its whole name along
+// the bottom. Names don't fit under three tiles, so turning picks one
+// and that one gets the full width. Faded is dark over black, not gray,
+// so it passes the black test.
+export function drawCollection({ items = [], at = 0, empty = "No playlists" } = {}) {
+  if (items.length === 0) return drawStripNotice(empty);
+  const pick = (offset) => items[(((at + offset) % items.length) + items.length) % items.length];
+  const parts = [];
+  if (items.length > 2) parts.push(`<g opacity="0.3">${tile({ art: pick(-1).art, x: 14, y: 14, size: 44, radius: 10, id: "before" })}</g>`);
+  if (items.length > 1) parts.push(`<g opacity="0.3">${tile({ art: pick(1).art, x: 142, y: 14, size: 44, radius: 10, id: "after" })}</g>`);
+  parts.push(tile({ art: pick(0).art, x: 70, y: 6, size: 60, radius: 13, id: "here" }));
+  parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
+  return strip(parts.join(""));
+}
+
+// The Queue dial. When the music is coming from my queue: the
+// highlighted song's tile, "3 of 42" and the artist next to it, and its
+// name along the bottom. The number is pink when it's the song up next. When it isn't (Music's own window, a catalogue
+// stream), it says how to get a queue and shows only the current
+// song's art, because anything more would be a guess.
+//   view   from queueView() in queue.js
+//   art    the highlighted song's art
+//   now    the song that's playing, for its art when there's no queue
+export function drawQueue({ view = { live: false }, art, now = {} } = {}) {
+  if (!view.live) {
+    const lines = view.musicShuffle ? ["Music's own", "shuffle is on"] : ["Play from a dial", "to see your", "queue"];
+    if (!now.id) return strip(lines.map((line, i) => `<text x="100" y="${34 + i * 20}" font-size="15" font-weight="600" text-anchor="middle" fill="${DIM}">${line}</text>`).join(""));
+    return strip(
+      tile({ art: now.art, x: 12, y: 21, size: 58, radius: 12, id: "now" }) +
+        lines.map((line, i) => `<text x="82" y="${36 + i * 18}" font-size="14" font-weight="600" fill="${DIM}">${line}</text>`).join(""),
+    );
+  }
+  if (view.last) return drawStripNotice("End of the queue");
+  return strip(
+    tile({ art, x: 12, y: 8, size: 58, radius: 12, id: "next" }) +
+      `<text x="82" y="30" font-size="13" fill="${view.next ? PINK : DIM}">${view.number} of ${view.total}</text>` +
+      `<text x="82" y="52" font-size="13" fill="${DIM}">${safe(fit(view.track.artist ?? "", 106, 13))}</text>` +
+      `<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(view.track.name, 176, 15))}</text>`,
+  );
 }

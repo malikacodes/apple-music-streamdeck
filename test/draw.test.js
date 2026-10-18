@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
+import { drawCollection, drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawPlayPlaylist, drawQueue, drawRepeat, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
 
 // A tiny real JPEG, packed as a data URI, to stand in for album art.
 const ART = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
@@ -37,6 +37,18 @@ const pictures = {
   "now playing paused": drawNowPlaying({ id: "A1", art: ART }),
   "now playing art on its way": drawNowPlaying({ id: "A1" }),
   "now playing nothing": drawNowPlaying({}),
+  "play playlist unset": drawPlayPlaylist({}),
+  "play playlist": drawPlayPlaylist({ name: "Pop", art: ART }),
+  "play playlist playing": drawPlayPlaylist({ name: "Pop", art: ART, playing: true }),
+  "play playlist long name no art": drawPlayPlaylist({ name: "Best of 90's and 2000's Praise and Worship" }),
+  "collection empty": drawCollection({ items: [], empty: "No playlists" }),
+  "collection one": drawCollection({ items: [{ name: "Pop", art: ART }] }),
+  "collection many": drawCollection({ items: [{ name: "Oldies" }, { name: "Pop", art: ART }, { name: "Reggae" }, { name: "Vibes" }], at: 1 }),
+  "queue live": drawQueue({ view: { live: true, total: 42, number: 3, next: true, track: { id: "S3", name: "Let Her Go", artist: "Passenger" } }, art: ART }),
+  "queue later": drawQueue({ view: { live: true, total: 42, number: 9, next: false, track: { id: "S9", name: "Bad Day", artist: "Daniel Powter" } } }),
+  "queue last": drawQueue({ view: { live: true, total: 42, last: true } }),
+  "queue not mine": drawQueue({ view: { live: false }, now: { id: "A1", art: ART } }),
+  "queue nothing playing": drawQueue({ view: { live: false }, now: {} }),
 };
 
 // The deck is pure black, so anything else behind a picture is a gray
@@ -137,4 +149,35 @@ test("the Now Playing key draws art, paused, waiting and nothing", () => {
   assert.ok(!pictures["now playing art on its way"].includes("<image"));
   assert.ok(!pictures["now playing nothing"].includes("<rect x="), "no tile at all");
   for (const name of ["now playing", "now playing paused", "now playing art on its way", "now playing nothing"]) assert.ok(!pictures[name].includes("<text"), name);
+});
+
+// A brand new Play Playlist key has no playlist, and says so instead of
+// playing nothing. The playing one gets its pink ring.
+test("Play Playlist says pick one, and rings the one playing", () => {
+  assert.ok(pictures["play playlist unset"].includes(">Pick a<") && pictures["play playlist unset"].includes(">playlist<"));
+  assert.ok(!pictures["play playlist"].includes('stroke="#fc3c44"'));
+  assert.ok(pictures["play playlist playing"].includes('stroke="#fc3c44"'));
+  assert.ok(pictures["play playlist long name no art"].includes("…"));
+});
+
+// The browsing dial: nothing to browse says so, one item is one tile,
+// and many show the picked one bright with its whole name, and the
+// neighbours faded.
+test("Play Collection draws empty, one and many", () => {
+  assert.ok(pictures["collection empty"].includes(">No playlists<"));
+  assert.ok(!pictures["collection one"].includes('opacity="0.3"'));
+  assert.equal((pictures["collection many"].match(/opacity="0.3"/g) ?? []).length, 2);
+  assert.ok(pictures["collection many"].includes(">Pop<"));
+  assert.ok(!pictures["collection many"].includes(">Oldies<"), "only the picked name is written");
+});
+
+// The Queue dial's number, and the notice when the music isn't from my
+// queue: it says how to get one and shows only the current song's art.
+test("the Queue strip shows 3 of 42, or how to get a queue", () => {
+  assert.ok(pictures["queue live"].includes(">3 of 42<"));
+  assert.ok(pictures["queue live"].includes(">Let Her Go<"));
+  assert.ok(pictures["queue later"].includes(">9 of 42<"));
+  assert.ok(pictures["queue last"].includes(">End of the queue<"));
+  assert.ok(pictures["queue not mine"].includes(">Play from a dial<") && pictures["queue not mine"].includes(`href="${ART}"`));
+  assert.ok(!pictures["queue nothing playing"].includes("<image"));
 });

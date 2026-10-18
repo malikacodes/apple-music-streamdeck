@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- The plugin fills this from Music when the page opens: my
+         playlists, then my library's albums. The refresh button asks
+         again after I make a new playlist. A key I haven't set says
+         "Pick a playlist". -->
+    <sdpi-item label="Plays">
+      <sdpi-select setting="list" datasource="getPlaylists" hot-reload show-refresh placeholder="Pick a playlist"></sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

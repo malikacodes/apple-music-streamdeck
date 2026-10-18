@@ -1,7 +1,7 @@
 // Every question I ask the Music app lives in this file, and nothing else
 // in the plugin runs osascript. Each one goes through run.js, so each
 // gets its three second limit.
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./run.js";
@@ -28,9 +28,18 @@ function guarded(body, handlers = "") {
   ].join("\n");
 }
 
+// A failed script comes back from Node with the whole script in its
+// message, which buries the one line that matters. So only Music's own
+// words go up to the log, or a plain "took too long" when run.js gave
+// up on it.
 async function ask(body, { handlers, ...options } = {}) {
-  const { stdout } = await run("/usr/bin/osascript", ["-e", guarded(body, handlers)], options);
-  return stdout.replace(/\n$/, "");
+  try {
+    const { stdout } = await run("/usr/bin/osascript", ["-e", guarded(body, handlers)], options);
+    return stdout.replace(/\n$/, "");
+  } catch (err) {
+    if (err.killed) throw new Error("Music took longer than the time limit to answer");
+    throw new Error(String(err.stderr || err.message).trim().split("\n").pop());
+  }
 }
 
 // Opening Music is the one thing that's allowed to start it, because a
@@ -195,43 +204,59 @@ end keepArt`;
 const isId = (id) => /^[0-9A-F]{1,32}$/i.test(String(id));
 
 // The art for one song, as a data URI, or null when Music has none.
-// "moved" means the song changed between the status read and this one,
-// so there's nothing to say about this song yet, and that's undefined.
-async function fetchArt(id) {
+// "where" says which song, in AppleScript ("current track", or a track
+// of a playlist). When the persistent ID is known, the script checks
+// it's still the same song: "moved" means it changed between the status
+// read and this one, so there's nothing to say about it yet, and that's
+// undefined. A song that isn't there at all (an empty playlist has no
+// first song) is the same as no art. Each fetch gets its own files, so a strip's tiles and the
+// art key can fetch at the same time without writing over each other.
+let fetches = 0;
+async function fetchArt(where, id) {
   await mkdir(ART_DIR, { recursive: true });
-  const full = join(ART_DIR, "art");
-  const small = join(ART_DIR, "art-small");
-  const answer = await ask(
-    `    set t to current track
-    if persistent ID of t is not "${id}" then return "moved"
+  const n = ++fetches;
+  const full = join(ART_DIR, `art-${n}`);
+  const small = join(ART_DIR, `art-${n}-small`);
+  try {
+    const answer = await ask(
+      `    try
+      set t to ${where}
+    on error
+      return "none"
+    end try
+    ${id ? `if persistent ID of t is not "${id}" then return "moved"` : ""}
     if (count artworks of t) is 0 then return "none"
     my keepArt(data of artwork 1 of t, "${full}")
     return "saved"`,
-    { handlers: SAVE },
-  );
-  if (answer === "moved" || answer === CLOSED) return undefined;
-  if (answer !== "saved") return null;
-  await run("/usr/bin/sips", ["-Z", String(ART_PX), full, "--out", small]);
-  const bytes = await readFile(small);
-  const type = bytes[0] === 0x89 ? "png" : "jpeg";
-  return `data:image/${type};base64,${bytes.toString("base64")}`;
+      { handlers: SAVE },
+    );
+    if (answer === "moved" || answer === CLOSED) return undefined;
+    if (answer !== "saved") return null;
+    await run("/usr/bin/sips", ["-Z", String(ART_PX), full, "--out", small]);
+    const bytes = await readFile(small);
+    const type = bytes[0] === 0x89 ? "png" : "jpeg";
+    return `data:image/${type};base64,${bytes.toString("base64")}`;
+  } finally {
+    await rm(full, { force: true });
+    await rm(small, { force: true });
+  }
 }
 
-// What I've already got, by persistent ID. The once a second read only
-// asks Music for art when the song changes, never on every tick.
+// What I've already got, by persistent ID (or by playlist, for the
+// tiles). The once a second read only asks Music for art when the song
+// changes, never on every tick.
 //
 // The same streamed song can come back with no art one minute and art
 // the next, so a song with none gets one more try ten seconds later.
 // After that it keeps the placeholder: asking every second would be a
 // script a second for a picture that isn't coming. The retry rides on
-// the once a second read, so it needs no timer of its own.
+// whatever asks next, so it needs no timer of its own.
 export const ART_RETRY_MS = 10000;
-const ART_KEEP = 50;
+const ART_KEEP = 80;
 const arts = new Map();
 
-export async function artwork(id, clock = Date.now()) {
-  if (!isId(id)) return null;
-  const known = arts.get(id);
+async function cachedArt(key, where, id, clock) {
+  const known = arts.get(key);
   if (known?.art) return known.art;
   if (known && (known.tries >= 2 || clock - known.triedAt < ART_RETRY_MS)) return null;
   // A fetch that fails (sips choking on a strange picture) counts as a
@@ -239,12 +264,226 @@ export async function artwork(id, clock = Date.now()) {
   // The error still goes up, so it lands in the log.
   let art = null;
   try {
-    art = await fetchArt(id);
+    art = await fetchArt(where, id);
     if (art === undefined) return null;
   } finally {
-    if (art !== undefined) arts.set(id, { art, tries: (known?.tries ?? 0) + 1, triedAt: clock });
-    // Fifty songs of art is plenty. The oldest goes first.
+    if (art !== undefined) arts.set(key, { art, tries: (known?.tries ?? 0) + 1, triedAt: clock });
+    // Eighty pictures is plenty. The oldest goes first.
     if (arts.size > ART_KEEP) arts.delete(arts.keys().next().value);
   }
   return art;
+}
+
+// The song that's playing.
+export async function artwork(id, clock = Date.now()) {
+  if (!isId(id)) return null;
+  return cachedArt(id, "current track", id, clock);
+}
+
+// A song further down the queue, by its place in it.
+export async function queueArt(number, id, clock = Date.now()) {
+  if (!isId(id) || !Number.isInteger(number) || number < 1) return null;
+  return cachedArt(id, `track ${number} of ${QUEUE_REF}`, id, clock);
+}
+
+// A playlist, album or artist's tile: the art of its first song.
+// Playlists don't have art of their own in AppleScript.
+export async function sourceArt(source, clock = Date.now()) {
+  const from = sourceRef(source);
+  if (!from) return null;
+  return cachedArt(`${source.kind}:${source.id ?? source.name}:${source.artist ?? ""}`, `track 1 of ${from.tracks}`, null, clock);
+}
+
+// "Stream Deck Queue" is a playlist the plugin owns and refills on every
+// play from a dial or a Play Playlist key. Music has no Up Next I can
+// read, but it does play a playlist in order, and it says which song of
+// it is playing. So the queue is this playlist, and "what's next" is
+// every song after the current one. The only playlists the plugin ever
+// empties are this one and "Stream Deck Test".
+export const QUEUE = "Stream Deck Queue";
+const QUEUE_REF = `user playlist "${QUEUE}"`;
+const OWN = [QUEUE, "Stream Deck Test"];
+
+// Text that goes inside a script in quotes, with its own quotes and
+// backslashes made safe, so a playlist called Say "Hi" can't break out.
+export function quoted(text) {
+  return `"${String(text).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+// Where a source's songs are, in AppleScript. A playlist is found by its
+// persistent ID when I have one, because two playlists can share a name
+// (I have two called 🙌🏽). Albums and artists come from my library.
+function sourceRef(source) {
+  if (source?.kind === "playlist" && isId(source.id)) return { tracks: `(first user playlist whose persistent ID is "${source.id}")`, list: true };
+  if (source?.kind === "playlist" && source.name) return { tracks: `user playlist ${quoted(source.name)}`, list: true };
+  if (source?.kind === "album" && source.name) return { tracks: `(every track of library playlist 1 whose album is ${quoted(source.name)})`, list: false };
+  if (source?.kind === "artist" && source.name) return { tracks: `(every track of library playlist 1 whose artist is ${quoted(source.name)})`, list: false };
+  return null;
+}
+
+// Rows of fields with tabs between them and a line break after each,
+// built inside the script so the whole list comes back in one go.
+const JOIN = `
+on joined(rows)
+  set AppleScript's text item delimiters to linefeed
+  set out to rows as text
+  set AppleScript's text item delimiters to ""
+  return out
+end joined`;
+
+// Inside "tell application Music", a variable can't share a name with
+// a word Music already uses. "names" and "ids" broke ("Can't get item 1
+// of names"), so the lists below have odd names like pids and titles.
+const rowsOf = (answer) => (answer && answer !== CLOSED ? answer.split("\n").map((row) => row.split("\t")) : []);
+
+// My playlists, without the library itself (Music lists it as a
+// playlist called "Music"), folders, or the plugin's own two. Read as
+// whole lists in one go: asking each playlist on its own took almost
+// three seconds for my 43.
+export async function playlists() {
+  const answer = await ask(
+    `    set {pids, titles, kinds} to {persistent ID, name, special kind} of every user playlist
+    set rows to {}
+    repeat with i from 1 to count pids
+      if (item i of kinds as text) is "none" then set end of rows to (item i of pids) & tab & my clean(item i of titles)
+    end repeat
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  return rowsOf(answer)
+    .filter(([id, name]) => id && !OWN.includes(name))
+    .map(([id, name]) => ({ kind: "playlist", id, name }));
+}
+
+// The albums and artists in my library, from three whole-list reads.
+// Streamed songs that are only in playlists aren't in the library, so
+// they don't show up here.
+async function libraryRows() {
+  const answer = await ask(
+    `    set {als, aas, ars} to {album, album artist, artist} of every track of library playlist 1
+    set rows to {}
+    repeat with i from 1 to count als
+      set end of rows to my clean(item i of als) & tab & my clean(item i of aas) & tab & my clean(item i of ars)
+    end repeat
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  return rowsOf(answer);
+}
+
+export async function albums() {
+  const seen = new Map();
+  for (const [album, albumArtist, artist] of await libraryRows()) {
+    if (!album) continue;
+    const by = albumArtist || artist;
+    seen.set(`${album}\t${by}`, { kind: "album", name: album, artist: by });
+  }
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function artists() {
+  const names = new Set((await libraryRows()).map(([, , artist]) => artist).filter(Boolean));
+  return [...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ kind: "artist", name }));
+}
+
+// The songs a source would play, as their places in it, in the order
+// they'd play. A playlist plays top to bottom. An album plays by disc
+// and track number, and only the album by that artist (I have more than
+// one "Greatest Hits"). An artist plays album by album.
+export async function sourceTracks(source) {
+  const from = sourceRef(source);
+  if (!from) return [];
+  if (from.list) {
+    const answer = await ask(`    return count tracks of ${from.tracks}`);
+    return Array.from({ length: Number(answer) || 0 }, (_, i) => i + 1);
+  }
+  const answer = await ask(
+    `    set rows to {}
+    repeat with t in ${from.tracks}
+      set end of rows to ((index of t) as text) & tab & (disc number of t) & tab & (track number of t) & tab & my clean(album of t) & tab & my clean(album artist of t) & tab & my clean(artist of t)
+    end repeat
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  return rowsOf(answer)
+    .map(([index, disc, number, album, albumArtist, artist]) => ({ index: Number(index), disc: Number(disc) || 0, number: Number(number) || 0, album, by: albumArtist || artist }))
+    .filter((t) => t.index > 0 && (source.kind !== "album" || !source.artist || t.by === source.artist))
+    .sort((a, b) => a.album.localeCompare(b.album) || a.disc - b.disc || a.number - b.number)
+    .map((t) => t.index);
+}
+
+// Writes songs into the queue playlist, making it the first time.
+// "all" copies a whole playlist in one go, which is fast (404 songs in
+// a quarter of a second). A list of places copies them one by one in
+// that order, which costs about 20 milliseconds a song, so callers send
+// them in chunks that fit inside the three second limit.
+// Hands back the queue's persistent ID.
+export async function fillQueue(source, places, { clear = false } = {}) {
+  const from = sourceRef(source);
+  if (!from) throw new Error("That isn't a playlist, album or artist I know how to play");
+  const safePlaces = places === "all" ? "all" : places.filter((n) => Number.isInteger(n) && n > 0);
+  const copy =
+    safePlaces === "all"
+      ? `    duplicate every track of ${from.tracks} to q`
+      : `    set s to ${from.list ? from.tracks : "library playlist 1"}
+    repeat with i in {${safePlaces.join(",")}}
+      duplicate track i of s to q
+    end repeat`;
+  const answer = await ask(
+    `    if not (exists ${QUEUE_REF}) then make new user playlist with properties {name:"${QUEUE}"}
+    set q to ${QUEUE_REF}
+    ${clear ? "delete every track of q" : ""}
+${copy}
+    return persistent ID of q`,
+  );
+  return answer === CLOSED ? null : answer;
+}
+
+// Plays the queue from its first song. Music's own shuffle goes off
+// first, or it would start anywhere and play my order in its own order.
+export async function playQueue() {
+  return (await ask(`    set shuffle enabled to false
+    play ${QUEUE_REF}`)) !== CLOSED;
+}
+
+// Jumping to a song further down: everything before it goes, and the
+// queue plays again from the top. That's one script however far the
+// jump. Sending "next track" over and over was the other way, and three
+// of them in a row only moved Music two songs.
+export async function jumpInQueue(number) {
+  if (!Number.isInteger(number) || number < 1) return false;
+  const drop = number > 1 ? `    delete (tracks 1 thru ${number - 1} of q)
+` : "";
+  return (await ask(`    set q to ${QUEUE_REF}
+${drop}    set shuffle enabled to false
+    play q`)) !== CLOSED;
+}
+
+// Empties the queue after the song that's playing, so a new order can
+// be written in behind it.
+export async function clearQueueAfter(number) {
+  if (!Number.isInteger(number) || number < 0) return false;
+  return (await ask(`    set q to ${QUEUE_REF}
+    if (count tracks of q) > ${number} then delete (tracks ${number + 1} thru -1 of q)`)) !== CLOSED;
+}
+
+// The queue as it is now: its persistent ID and every song in it, in
+// order. Null when there's no queue yet.
+export async function queueTracks() {
+  const answer = await ask(
+    `    if not (exists ${QUEUE_REF}) then return "none"
+    set q to ${QUEUE_REF}
+    set rows to {persistent ID of q}
+    if (count tracks of q) > 0 then
+      set {pids, titles, singers} to {persistent ID, name, artist} of every track of q
+      repeat with i from 1 to count pids
+        set end of rows to (item i of pids) & tab & my clean(item i of titles) & tab & my clean(item i of singers)
+      end repeat
+    end if
+    return my joined(rows)`,
+    { handlers: CLEAN + JOIN },
+  );
+  if (answer === CLOSED || answer === "none") return null;
+  const [[id], ...rest] = rowsOf(answer);
+  return { id, tracks: rest.map(([trackId, name, artist]) => ({ id: trackId, name, artist })) };
 }

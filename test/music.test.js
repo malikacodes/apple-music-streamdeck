@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 const music = { scripts: [], answer: "" };
 const realRun = promisify(execFile);
 mock.module(new URL("../src/run.js", import.meta.url).href, {
-  namedExports: {
+  exports: {
     COMMAND_MS: 3000,
     run: async (file, args, options) => {
       if (file !== "/usr/bin/osascript") return realRun(file, args, options);
