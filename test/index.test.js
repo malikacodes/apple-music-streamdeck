@@ -176,7 +176,7 @@ test("with Music closed the keys say Open Music and a press opens it", async (t)
   start(t);
   music.running = false;
   const shuffle = await appear("shuffle");
-  assert.ok(shuffle.pictures.at(-1).includes(">Open<") && shuffle.pictures.at(-1).includes(">Music<"));
+  assert.match(shuffle.pictures.at(-1), />Open( Music)?</);
   await press(shuffle);
   assert.equal(music.opened, 1);
   assert.equal(music.shuffle, false, "shuffle wasn't touched");

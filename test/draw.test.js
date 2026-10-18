@@ -263,12 +263,14 @@ test("the bar color setting is used when it's a plain hex, pink otherwise", () =
   assert.ok(drawMultimedia({ name: "Patient", volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
 });
 
-// One type scale for everything, taken from my Audio Dial: 15 and 22
-// for words and values, 14 for a small second line, and nothing heavier
-// than 600. Any other size or weight is a picture that drifted.
-test("every picture uses only the 14, 15 and 22 sizes and weights up to 600", () => {
+// One type scale for everything, taken from my Audio Dial and my
+// Pomodoro key: on a strip 15 and 22 for words and values and 14 for a
+// small second line, on a key 20 for its words, and nothing heavier than
+// 600. Any other size or weight is a picture that drifted.
+test("strips use 14, 15 and 22, keys use 20, and nothing is heavier than 600", () => {
   for (const [name, svg] of Object.entries(pictures)) {
-    for (const [, size] of svg.matchAll(/font-size="(\d+)"/g)) assert.ok(["14", "15", "22"].includes(size), `${name} uses size ${size}`);
+    const allowed = svg.includes('width="144"') ? ["20"] : ["14", "15", "22"];
+    for (const [, size] of svg.matchAll(/font-size="(\d+)"/g)) assert.ok(allowed.includes(size), `${name} uses size ${size}`);
     for (const [, weight] of svg.matchAll(/font-weight="(\d+)"/g)) assert.ok(Number(weight) <= 600, `${name} uses weight ${weight}`);
   }
 });
@@ -281,4 +283,14 @@ test("the strips put the name, value and bar in the Audio Dial's places", () => 
   }
   assert.match(pictures["queue live"], /<text x="14" y="64" font-size="22" font-weight="600"[^>]*>3 of 42</);
   assert.match(pictures["multimedia playing"], /<rect x="14" y="78" width="172" height="8" rx="4" fill="#2c2c30"\/>/);
+});
+
+// Repeat steps through three, so three dots along the bottom say which:
+// the first lit for off, the second for all, the third for one.
+test("the Repeat key's dots light up off, all, one in order", () => {
+  const lit = (svg) => [...svg.matchAll(/<circle cx="(\d+)" cy="126" r="4" fill="(#[0-9a-f]+)"\/>/g)].map(([, x, fill]) => (fill === "#ffffff" ? x : null)).filter(Boolean);
+  assert.deepEqual(lit(pictures["repeat off"]), ["56"]);
+  assert.deepEqual(lit(pictures["repeat all"]), ["72"]);
+  assert.deepEqual(lit(pictures["repeat one"]), ["88"]);
+  assert.equal((pictures["repeat one"].match(/cy="126"/g) ?? []).length, 3);
 });

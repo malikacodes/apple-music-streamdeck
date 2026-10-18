@@ -59,6 +59,11 @@ const value = (x, y, said, options = {}) => words(x, y, said, { size: 22, weight
 const notice = (x, y, said, options = {}) => words(x, y, said, { size: 15, weight: 400, ...options });
 const small = (x, y, said, options = {}) => words(x, y, said, { size: 14, weight: 400, color: DIM, ...options });
 
+// Keys are bigger than strips, the way my Pomodoro timer key does it: a
+// label on a key is 20 at weight 600. (A key's big value would be 38,
+// but no key here shows a number.)
+const keyLabel = (y, said, options = {}) => words(72, y, said, { size: 20, weight: 600, anchor: "middle", ...options });
+
 function key(inside) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" font-family="${FONT}">`,
@@ -68,19 +73,19 @@ function key(inside) {
   ].join("");
 }
 
-// A short message that takes a key over, like "Open Music". On a key it
-// is the key's one thing to read, so it gets the value size, 22. Words
-// go on their own lines when they don't fit on one, three lines at most.
+// A short message that takes a key over, like "Open Music" or "No
+// track", at the key label's size. Words go on their own lines when they
+// don't fit on one, three lines at most.
 export function drawNotice(text) {
   const lines = [];
   for (const word of String(text).split(" ")) {
     const last = lines.length - 1;
-    if (last >= 0 && guessWidth(`${lines[last]} ${word}`, 22) <= 120) lines[last] += ` ${word}`;
+    if (last >= 0 && guessWidth(`${lines[last]} ${word}`, 20) <= 120) lines[last] += ` ${word}`;
     else lines.push(word);
   }
-  const shown = lines.slice(0, 3).map((line) => fit(line, 124, 22));
-  const top = 80 - ((shown.length - 1) * 28) / 2;
-  return key(shown.map((line, i) => value(72, top + i * 28, line, { anchor: "middle" })).join(""));
+  const shown = lines.slice(0, 3).map((line) => fit(line, 124, 20));
+  const top = 79 - ((shown.length - 1) * 26) / 2;
+  return key(shown.map((line, i) => keyLabel(top + i * 26, line)).join(""));
 }
 
 // The shapes on the Playback key, all centered on the key.
@@ -113,17 +118,26 @@ export function drawShuffle({ on = false } = {}) {
   );
 }
 
+// A row of dots along the bottom of a key: "this many choices, and I'm
+// on this one". The lit dot is white and the rest are dim.
+function dots(lit, count) {
+  return Array.from({ length: count }, (_, i) => `<circle cx="${72 + (i - (count - 1) / 2) * 16}" cy="126" r="4" fill="${i === lit ? WHITE : DIM}"/>`).join("");
+}
+
 // A loop of two arrows. Stream Deck can only flip a key between two
 // pictures, and Repeat has three, so the plugin draws all three itself:
-// dim for off, pink for the whole list, pink with a 1 for one song.
+// dim for off, pink for the whole list, pink with a 1 for one song. The
+// dots underneath say which of the three it's on, in the order a press
+// goes round: off, all, one.
+const REPEAT_ORDER = ["off", "all", "one"];
 export function drawRepeat({ mode = "off" } = {}) {
   const color = mode === "off" ? DIM : PINK;
-  const one = mode === "one" ? value(72, 80, "1", { color: PINK, anchor: "middle" }) : "";
+  const one = mode === "one" ? keyLabel(79, "1", { color: PINK }) : "";
   return key(
     `<g ${pen(color)}>` +
       `<path d="M36 70v-8c0-7 5-12 12-12h54"/><path d="M92 40l11 10-11 10"/>` +
       `<path d="M108 74v8c0 7-5 12-12 12H42"/><path d="M52 84l-11 10 11 10"/>` +
-      `</g>${one}`,
+      `</g>${one}${dots(REPEAT_ORDER.indexOf(mode), REPEAT_ORDER.length)}`,
   );
 }
 
@@ -253,9 +267,9 @@ export function drawNowPlaying({ art, id, playing = false } = {}) {
 // tile while it's the one playing. A key I haven't picked a playlist for
 // yet says so, dimmed.
 export function drawPlayPlaylist({ name, art, playing = false } = {}) {
-  if (!name) return key(value(72, 66, "Pick a", { color: DIM, anchor: "middle" }) + value(72, 94, "playlist", { color: DIM, anchor: "middle" }));
+  if (!name) return key(keyLabel(68, "Pick a", { color: DIM }) + keyLabel(94, "playlist", { color: DIM }));
   const ring = playing ? `<rect x="23" y="5" width="98" height="98" rx="26" fill="none" stroke="${PINK}" stroke-width="4"/>` : "";
-  return key(tile({ art, x: 28, y: 10, size: 88, radius: 22, id: "art" }) + ring + label(72, 130, fit(name, 130, 15), { anchor: "middle" }));
+  return key(tile({ art, x: 28, y: 10, size: 88, radius: 22, id: "art" }) + ring + keyLabel(131, fit(name, 120, 20)));
 }
 
 // The Play Collection dial: the highlighted playlist's whole name in
@@ -302,10 +316,10 @@ export function drawQueue({ view = { live: false }, art, now = {} } = {}) {
 // along the bottom. After a press it's a pink tick for two seconds, so
 // I know the song went in.
 export function drawAddTo({ name, added = false } = {}) {
-  if (!name) return key(value(72, 66, "Pick a", { color: DIM, anchor: "middle" }) + value(72, 94, "playlist", { color: DIM, anchor: "middle" }));
-  if (added) return key(`<path d="M42 70l20 20 40-44" ${pen(PINK)}/>` + label(72, 130, "Added", { anchor: "middle" }));
+  if (!name) return key(keyLabel(68, "Pick a", { color: DIM }) + keyLabel(94, "playlist", { color: DIM }));
+  if (added) return key(`<path d="M42 70l20 20 40-44" ${pen(PINK)}/>` + keyLabel(131, "Added"));
   return key(
-    `<g ${pen(WHITE)}><path d="M34 36h52M34 58h52M34 80h30"/><path d="M96 66v34M79 83h34" stroke="${PINK}"/></g>` + label(72, 130, fit(name, 130, 15), { anchor: "middle" }),
+    `<g ${pen(WHITE)}><path d="M34 36h52M34 58h52M34 80h30"/><path d="M96 66v34M79 83h34" stroke="${PINK}"/></g>` + keyLabel(131, fit(name, 120, 20)),
   );
 }
 
