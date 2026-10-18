@@ -164,7 +164,7 @@ test("the volume strip shows no number before the first read", () => {
 // note with nothing loaded. And never any words.
 test("the Now Playing key draws art, paused, waiting and nothing", () => {
   assert.ok(pictures["now playing"].includes(`href="${ART}"`));
-  assert.ok(pictures["now playing"].includes('rx="32"'));
+  assert.ok(pictures["now playing"].includes('<path d="M12 12H132V132H12ZM40 12H104A28 28 0 0 1 132 40'), "the black corner frame, curved at 28");
   assert.ok(!pictures["now playing"].includes("<circle"));
   assert.ok(pictures["now playing paused"].includes('opacity="0.45"') && pictures["now playing paused"].includes("<circle"));
   assert.ok(!pictures["now playing art on its way"].includes("<image"));
@@ -293,4 +293,19 @@ test("the Repeat key's dots light up off, all, one in order", () => {
   assert.deepEqual(lit(pictures["repeat all"]), ["72"]);
   assert.deepEqual(lit(pictures["repeat one"]), ["88"]);
   assert.equal((pictures["repeat one"].match(/cy="126"/g) ?? []).length, 3);
+});
+
+// Stream Deck ignores clip-path on a picture, so the album art came out
+// square on my XL. Every art tile is drawn square with a black frame
+// over its corners instead, and the frame comes after the picture so it
+// paints over it.
+test("every art tile is cornered by a black frame, never a clip", () => {
+  for (const [name, svg] of Object.entries(pictures)) {
+    if (!svg.includes("<image")) continue;
+    assert.ok(!svg.includes("clip-path"), `${name} still clips`);
+    const images = (svg.match(/<image /g) ?? []).length;
+    const frames = (svg.match(/fill="#000000" fill-rule="evenodd"/g) ?? []).length;
+    assert.equal(frames, images, `${name}: one frame per picture`);
+    assert.ok(svg.indexOf("fill-rule") > svg.indexOf("<image"), `${name}: the frame is drawn over the picture`);
+  }
 });

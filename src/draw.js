@@ -205,8 +205,21 @@ export function drawVolume({ volume, muted = false, color } = {}) {
 const NOTE = (x, y, s, color) =>
   `<g transform="translate(${x} ${y}) scale(${Number(s.toFixed(3))})" fill="${color}"><path d="M10 21V7l11-2.5v14" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/><ellipse cx="7.5" cy="21" rx="3.5" ry="2.8"/><ellipse cx="18.5" cy="18.5" rx="3.5" ry="2.8"/></g>`;
 
+// A black frame over a square picture: the tile's square with a rounded
+// hole cut out of it (evenodd fill means the inner shape becomes a hole),
+// so the corners outside the curve are painted black. Stream Deck ignores
+// clip-path on an <image>: the album art was clipped round in Chrome and
+// came out square on my XL. Painting the corners over works everywhere.
+function cornerFrame({ x, y, size, radius: r }) {
+  const right = x + size;
+  const bottom = y + size;
+  const hole = `M${x + r} ${y}H${right - r}A${r} ${r} 0 0 1 ${right} ${y + r}V${bottom - r}A${r} ${r} 0 0 1 ${right - r} ${bottom}H${x + r}A${r} ${r} 0 0 1 ${x} ${bottom - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
+  return `<path d="M${x} ${y}H${right}V${bottom}H${x}Z${hole}" fill="${BLACK}" fill-rule="evenodd"/>`;
+}
+
 // The rounded tile a song's art sits on. Art comes in as a data URI
-// (the picture packed into text) and is clipped to the tile's corners.
+// (the picture packed into text), drawn square, with the black corner
+// frame over it.
 // With no art yet, it's a dim outline with a note in it.
 //
 // Paused art is dimmed, and the tiles either side of a browsing dial's
@@ -219,8 +232,8 @@ function tile({ art, x, y, size, radius, dim = false, faded = false, id }) {
     return `<rect x="${x + 1}" y="${y + 1}" width="${size - 2}" height="${size - 2}" rx="${radius}" fill="none" stroke="${DIM}" stroke-width="2"/>` + NOTE(x + size / 2 - size * 0.25, y + size / 2 - size * 0.25, size / 56, DIM);
   }
   return (
-    `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${radius}"/></clipPath>` +
-    `<image href="${art}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"${faded ? ' opacity="0.3"' : dim ? ' opacity="0.45"' : ""}/>`
+    `<image href="${art}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice"${faded ? ' opacity="0.3"' : dim ? ' opacity="0.45"' : ""}/>` +
+    cornerFrame({ x, y, size, radius })
   );
 }
 
@@ -248,18 +261,18 @@ export function drawMultimedia({ art, name, artist, playing = false, volume = 0,
   return strip(parts.join(""));
 }
 
-// The Now Playing key for my XL. The art fills a rounded tile with a
-// little black around it, the same numbers as my app-icon keys, so it
-// sits right next to them. Paused, the art dims and a pause sign sits
+// The Now Playing key for my XL. The art fills a rounded tile with 12
+// pixels of black around it, and its corners curve at 28 (about 23% of
+// the tile), the curve of the macOS app icons next to it on my deck. Paused, the art dims and a pause sign sits
 // in the corner on a black circle. With art still on its way it's the
 // empty tile, and with nothing loaded at all it's only a dim note.
 export function drawNowPlaying({ art, id, playing = false } = {}) {
   if (!id) return key(NOTE(30, 30, 3, DIM));
-  if (!art) return key(tile({ art: null, x: 12, y: 12, size: 120, radius: 32 }));
+  if (!art) return key(tile({ art: null, x: 12, y: 12, size: 120, radius: 28 }));
   const paused = playing
     ? ""
     : `<circle cx="110" cy="110" r="22" fill="${BLACK}"/><rect x="101" y="99" width="6" height="22" rx="2" fill="${WHITE}"/><rect x="113" y="99" width="6" height="22" rx="2" fill="${WHITE}"/>`;
-  return key(tile({ art, x: 12, y: 12, size: 120, radius: 32, dim: !playing, id: "art" }) + paused);
+  return key(tile({ art, x: 12, y: 12, size: 120, radius: 28, dim: !playing, id: "art" }) + paused);
 }
 
 // The Play Playlist key: the playlist's tile (the art of its first
