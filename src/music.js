@@ -214,9 +214,12 @@ const isId = (id) => /^[0-9A-F]{1,32}$/i.test(String(id));
 let fetches = 0;
 async function fetchArt(where, id) {
   await mkdir(ART_DIR, { recursive: true });
-  const n = ++fetches;
-  const full = join(ART_DIR, `art-${n}`);
-  const small = join(ART_DIR, `art-${n}-small`);
+  // The process id is in the name too: a second copy of the plugin (the
+  // pretend deck next to the real one) counts from 1 as well, and the
+  // two were deleting each other's pictures.
+  const name = `art-${process.pid}-${++fetches}`;
+  const full = join(ART_DIR, name);
+  const small = join(ART_DIR, `${name}-small`);
   try {
     const answer = await ask(
       `    try
