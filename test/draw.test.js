@@ -72,6 +72,15 @@ test("every picture is on pure black and uses only my four colors", () => {
   }
 });
 
+// White or the dim gray made see-through turns into a flat gray square
+// on the deck, and the hex check above can't see that. Only album art
+// may be faded.
+test("nothing but album art is ever see-through", () => {
+  for (const [name, svg] of Object.entries(pictures)) {
+    for (const element of svg.match(/<[a-z]+[^>]*opacity="[^"]*"/g) ?? []) assert.ok(element.startsWith("<image"), `${name}: ${element.slice(0, 60)}`);
+  }
+});
+
 // A brand new key has no settings at all, and the dropdown's first
 // choice has to be what it does.
 test("a key with no job set is Play/Pause", () => {
@@ -177,7 +186,7 @@ test("Play Playlist says pick one, and rings the one playing", () => {
 test("Play Collection draws empty, one and many", () => {
   assert.ok(pictures["collection empty"].includes(">No playlists<"));
   assert.ok(!pictures["collection one"].includes('opacity="0.3"'));
-  assert.equal((pictures["collection many"].match(/opacity="0.3"/g) ?? []).length, 2);
+  assert.equal((drawCollection({ items: [{ name: "A", art: ART }, { name: "B", art: ART }, { name: "C", art: ART }], at: 1 }).match(/opacity="0.3"/g) ?? []).length, 2, "the two side tiles are faded");
   assert.ok(pictures["collection many"].includes(">Pop<"));
   assert.ok(!pictures["collection many"].includes(">Oldies<"), "only the picked name is written");
 });
@@ -209,7 +218,10 @@ test("the AirPlay strip draws none, one and many", () => {
   assert.ok(pictures["airplay one"].includes('stroke="#fc3c44"'));
   assert.ok(!pictures["airplay one"].includes('opacity="0.3"'));
   assert.ok(pictures["airplay many"].includes(">Living Room<"));
-  assert.equal((pictures["airplay many"].match(/opacity="0.3"/g) ?? []).length, 2);
+  // Living Room is picked, so the MacBook (playing now) sits to its left
+  // in pink and the Kitchen to its right in the dim gray.
+  assert.equal((pictures["airplay many"].match(/stroke="#5c5c62"/g) ?? []).length, 1);
+  assert.equal((pictures["airplay many"].match(/stroke="#fc3c44"/g) ?? []).length, 1);
 });
 
 // Saved Search's empty states each say something different, and nothing

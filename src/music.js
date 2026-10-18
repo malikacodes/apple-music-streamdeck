@@ -213,8 +213,9 @@ const isId = (id) => /^[0-9A-F]{1,32}$/i.test(String(id));
 // it's still the same song: "moved" means it changed between the status
 // read and this one, so there's nothing to say about it yet, and that's
 // undefined. A song that isn't there at all (an empty playlist has no
-// first song) is the same as no art. Each fetch gets its own files, so a strip's tiles and the
-// art key can fetch at the same time without writing over each other.
+// first song) is the same as no art. Each fetch gets its own files, so
+// a strip's tiles and the art key can fetch at the same time without
+// writing over each other.
 let fetches = 0;
 async function fetchArt(where, id) {
   await mkdir(ART_DIR, { recursive: true });

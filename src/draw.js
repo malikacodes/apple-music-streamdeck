@@ -160,20 +160,26 @@ export function drawVolume({ volume, muted = false } = {}) {
   );
 }
 
-// The rounded tile a song's art sits on. Art comes in as a data URI
-// (the picture packed into text) and is clipped to the tile's corners.
-// With no art yet, it's an outline with a note in it. Paused art is
-// dimmed: dark over black, not gray, so it still passes the black test.
+// A music note, the one in the plugin's icon, at any size.
 const NOTE = (x, y, s, color) =>
   `<g transform="translate(${x} ${y}) scale(${Number(s.toFixed(3))})" fill="${color}"><path d="M10 21V7l11-2.5v14" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/><ellipse cx="7.5" cy="21" rx="3.5" ry="2.8"/><ellipse cx="18.5" cy="18.5" rx="3.5" ry="2.8"/></g>`;
 
-function tile({ art, x, y, size, radius, dim = false, id }) {
+// The rounded tile a song's art sits on. Art comes in as a data URI
+// (the picture packed into text) and is clipped to the tile's corners.
+// With no art yet, it's a dim outline with a note in it.
+//
+// Paused art is dimmed, and the tiles either side of a browsing dial's
+// pick are faded further. Only art is ever see-through: a photo going
+// dark over black still reads as a photo, but white or the dim gray at
+// a third goes to a flat gray square, which is the look I don't want
+// next to my black keys. So an empty tile stays the plain dim outline.
+function tile({ art, x, y, size, radius, dim = false, faded = false, id }) {
   if (!art) {
     return `<rect x="${x + 1}" y="${y + 1}" width="${size - 2}" height="${size - 2}" rx="${radius}" fill="none" stroke="${DIM}" stroke-width="2"/>` + NOTE(x + size / 2 - size * 0.25, y + size / 2 - size * 0.25, size / 56, DIM);
   }
   return (
     `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${radius}"/></clipPath>` +
-    `<image href="${art}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"${dim ? ' opacity="0.45"' : ""}/>`
+    `<image href="${art}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"${faded ? ' opacity="0.3"' : dim ? ' opacity="0.45"' : ""}/>`
   );
 }
 
@@ -232,14 +238,13 @@ export function drawPlayPlaylist({ name, art, playing = false } = {}) {
 // The Play Collection dial: the highlighted playlist's tile in the
 // middle, the ones either side of it faded, and its whole name along
 // the bottom. Names don't fit under three tiles, so turning picks one
-// and that one gets the full width. Faded is dark over black, not gray,
-// so it passes the black test.
+// and that one gets the full width.
 export function drawCollection({ items = [], at = 0, empty = "No playlists" } = {}) {
   if (items.length === 0) return drawStripNotice(empty);
   const pick = (offset) => items[(((at + offset) % items.length) + items.length) % items.length];
   const parts = [];
-  if (items.length > 2) parts.push(`<g opacity="0.3">${tile({ art: pick(-1).art, x: 14, y: 14, size: 44, radius: 10, id: "before" })}</g>`);
-  if (items.length > 1) parts.push(`<g opacity="0.3">${tile({ art: pick(1).art, x: 142, y: 14, size: 44, radius: 10, id: "after" })}</g>`);
+  if (items.length > 2) parts.push(tile({ art: pick(-1).art, x: 14, y: 14, size: 44, radius: 10, faded: true, id: "before" }));
+  if (items.length > 1) parts.push(tile({ art: pick(1).art, x: 142, y: 14, size: 44, radius: 10, faded: true, id: "after" }));
   parts.push(tile({ art: pick(0).art, x: 70, y: 6, size: 60, radius: 13, id: "here" }));
   parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
   return strip(parts.join(""));
@@ -247,9 +252,10 @@ export function drawCollection({ items = [], at = 0, empty = "No playlists" } = 
 
 // The Queue dial. When the music is coming from my queue: the
 // highlighted song's tile, "3 of 42" and the artist next to it, and its
-// name along the bottom. The number is pink when it's the song up next. When it isn't (Music's own window, a catalogue
-// stream), it says how to get a queue and shows only the current
-// song's art, because anything more would be a guess.
+// name along the bottom. The number is pink when it's the song up next.
+// When it isn't my queue (Music's own window, a catalogue stream), it
+// says how to get one and shows only the current song's art, because
+// anything more would be a guess.
 //   view   from queueView() in queue.js
 //   art    the highlighted song's art
 //   now    the song that's playing, for its art when there's no queue
@@ -303,15 +309,15 @@ function place(kind, x, y, size, color) {
 }
 
 // The AirPlay dial: the highlighted place in the middle with its full
-// name along the bottom, its neighbours faded either side. The one
+// name along the bottom, its neighbours in the dim gray either side. The one
 // Music is playing to now is pink, so I can see where I am before I
 // push.
 export function drawAirPlay({ devices = [], at = 0 } = {}) {
   if (devices.length === 0) return drawStripNotice("No AirPlay devices");
   const pick = (offset) => devices[(((at + offset) % devices.length) + devices.length) % devices.length];
   const parts = [];
-  if (devices.length > 2) parts.push(`<g opacity="0.3">${place(pick(-1).kind, 18, 16, 36, pick(-1).selected ? PINK : WHITE)}</g>`);
-  if (devices.length > 1) parts.push(`<g opacity="0.3">${place(pick(1).kind, 146, 16, 36, pick(1).selected ? PINK : WHITE)}</g>`);
+  if (devices.length > 2) parts.push(place(pick(-1).kind, 18, 16, 36, pick(-1).selected ? PINK : DIM));
+  if (devices.length > 1) parts.push(place(pick(1).kind, 146, 16, 36, pick(1).selected ? PINK : DIM));
   parts.push(place(pick(0).kind, 74, 6, 52, pick(0).selected ? PINK : WHITE));
   parts.push(`<text x="100" y="90" font-size="15" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(pick(0).name, 180, 15))}</text>`);
   return strip(parts.join(""));
