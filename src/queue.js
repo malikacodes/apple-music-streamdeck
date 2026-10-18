@@ -138,11 +138,15 @@ async function fillRest(gen, { log, changed }) {
 // Plays a playlist, album or artist through the queue. With shuffle, the
 // plugin shuffles the order itself. Hands back false if Music is closed
 // and "empty" if there's nothing to play.
+//
+// The old queue's background fill is only stopped once there's really
+// something new to play. Stopping it first meant an empty playlist left
+// the old queue half written.
 export async function start(source, { shuffle = false, log, changed } = {}) {
-  const gen = ++generation;
   return inLine(async () => {
     const natural = await music.sourceTracks(source);
     if (natural.length === 0) return "empty";
+    const gen = ++generation;
     const order = shuffle ? shuffled(natural) : natural;
     // A playlist in its own order can be copied in one go. Anything else
     // goes in one song at a time, so only the first part goes in now.

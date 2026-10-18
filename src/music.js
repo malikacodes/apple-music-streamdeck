@@ -87,17 +87,21 @@ end clean`;
 
 // "current playlist" errors out when the song didn't start from a
 // playlist, so that part has its own try, and the track still shows.
+// The song's fields are gathered on the side and added all at once, so
+// a song that fails halfway (an odd stream with no name) leaves the line
+// at its short length instead of one the parser has to refuse. (It's
+// called trackPart because "song" is already a word Music owns.)
 const STATUS = `
     set fields to {player state as text, sound volume, mute, shuffle enabled, song repeat as text}
     try
       set t to current track
-      set fields to fields & {player position as integer, duration of t as integer, persistent ID of t, favorited of t}
+      set trackPart to {player position as integer, duration of t as integer, persistent ID of t, favorited of t}
       try
-        set fields to fields & {persistent ID of current playlist, index of t}
+        set trackPart to trackPart & {persistent ID of current playlist, index of t}
       on error
-        set fields to fields & {"", 0}
+        set trackPart to trackPart & {"", 0}
       end try
-      set fields to fields & {my clean(name of t), my clean(artist of t), my clean(album of t)}
+      set fields to fields & trackPart & {my clean(name of t), my clean(artist of t), my clean(album of t)}
     end try
     set AppleScript's text item delimiters to tab
     set answer to fields as text

@@ -231,3 +231,11 @@ test("my playlists leave out Stream Deck Queue and Stream Deck Test", async () =
   music.answer = "A1\tPop\nB2\tStream Deck Queue\nC3\tStream Deck Test\nD4\tVibes";
   assert.deepEqual((await playlists()).map((p) => p.name), ["Pop", "Vibes"]);
 });
+
+// The song's fields go onto the line together, so a song that fails
+// halfway can't leave a line of a length the parser refuses.
+test("the status script adds the song's fields in one go", async () => {
+  music.answer = PAUSED;
+  await status();
+  assert.match(music.scripts.at(-1), /set fields to fields & trackPart & \{my clean\(name of t\)/);
+});

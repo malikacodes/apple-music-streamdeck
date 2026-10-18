@@ -55,12 +55,10 @@ function onScreen() {
   return kinds.flatMap((kind) => [...kind.actions].map((target) => [kind, target]));
 }
 
-// Redraws everything that's showing. One key failing to draw (it left
-// the page halfway through) mustn't stop the others.
+// Redraws everything that's showing. render() never throws (see
+// below), so one key failing can't stop the others.
 async function redraw() {
-  await Promise.all(
-    onScreen().map(([kind, target]) => kind.render(target).catch((err) => streamDeck.logger.error(`Couldn't draw a key: ${err.message}`))),
-  );
+  await Promise.all(onScreen().map(([kind, target]) => kind.render(target)));
 }
 
 // The once a second read. It only runs while something of mine is on
@@ -159,20 +157,33 @@ class MusicAction extends SingletonAction {
 
   // Only sends the picture when it changed. Most seconds nothing has,
   // and the deck doesn't need the same picture again.
+  //
+  // A key can leave the page while its picture is on the way, and then
+  // setImage fails. Stream Deck's events don't catch that for me, and on
+  // Node 24 an uncaught failure ends the whole plugin, so it's caught
+  // here, once, for every caller.
   async render(target) {
-    const svg = this.picture(target);
-    if (this.shown.get(target.id) === svg) return;
-    this.shown.set(target.id, svg);
-    if (this.strip) await target.setFeedback({ canvas: asImage(svg) });
-    else await target.setImage(asImage(svg));
+    try {
+      const svg = this.picture(target);
+      if (this.shown.get(target.id) === svg) return;
+      this.shown.set(target.id, svg);
+      if (this.strip) await target.setFeedback({ canvas: asImage(svg) });
+      else await target.setImage(asImage(svg));
+    } catch (err) {
+      this.shown.delete(target.id);
+      streamDeck.logger.error(`Couldn't draw a key: ${err.message}`);
+    }
   }
 
   // A press while Music is closed opens it, whatever the key is.
   // Otherwise the key does its job, and "false" back from music.js
   // means Music closed in the second since the last read.
-  async act(target, job) {
+  //
+  // A turn is different: brushing a dial shouldn't start Music, so a
+  // turn while it's closed does nothing.
+  async act(target, job, { opens = true } = {}) {
     try {
-      if (now && !now.running) return await music.openMusic();
+      if (now && !now.running) return opens ? await music.openMusic() : undefined;
       const open = await job(now ?? {}, this.settings.get(target.id) ?? {});
       if (open === false) now = music.NOT_RUNNING;
       await redraw();
@@ -197,7 +208,7 @@ class MusicAction extends SingletonAction {
   }
 
   onDialRotate(ev) {
-    return this.act(ev.action, (status, settings) => this.turn(ev.action, ev.payload.ticks, status, settings));
+    return this.act(ev.action, (status, settings) => this.turn(ev.action, ev.payload.ticks, status, settings), { opens: false });
   }
 }
 
@@ -755,7 +766,7 @@ class SavedSearch extends MusicAction {
     this.searching.add(target.id);
     music
       .search(words)
-      .then((results) => this.found.set(target.id, { words, results }))
+      .then((results) => this.found.set(target.id, { words, results, at: Date.now() }))
       .catch((err) => {
         streamDeck.logger.error(`Couldn't search my library: ${err.message}`);
         this.found.set(target.id, { words, results: [] });
@@ -789,7 +800,16 @@ class SavedSearch extends MusicAction {
     return this.render(target).then(() => true);
   }
 
+  // Pushed after sitting a minute, the search runs again first, so a
+  // song I just added to my library can turn up.
   async press(target) {
+    const known = this.found.get(target.id);
+    if (known && Date.now() - (known.at ?? 0) > LIST_MS) {
+      const results = await music.search(this.words(target));
+      this.found.set(target.id, { words: this.words(target), results, at: Date.now() });
+      this.picks.delete(target.id);
+      await this.render(target);
+    }
     const song = this.found.get(target.id)?.results?.[this.at(target)];
     if (!song) return this.notice(target, "Nothing to play");
     const played = await music.playLibraryTrack(song.index, song.id);

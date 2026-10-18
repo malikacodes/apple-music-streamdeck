@@ -204,3 +204,30 @@ test("the status read runs once a second, and stops when the last key leaves", a
   await settle();
   assert.equal(music.reads, first + 1, "no reads after it left");
 });
+
+// A key that leaves the page while its picture is on the way makes
+// setImage fail. That used to escape and, on Node 24, end the plugin.
+test("a picture that can't be sent is logged, not thrown", async (t) => {
+  start(t);
+  const key = await appear("repeat");
+  key.setImage = async () => {
+    throw new Error("No such key");
+  };
+  music.repeat = "one";
+  await assert.doesNotReject(kind("repeat").onWillAppear({ action: key, payload: { settings: {} } }));
+  leave(key);
+});
+
+// Brushing a dial while Music is closed mustn't start Music. Only a
+// press means "open it".
+test("turning a dial with Music closed doesn't open Music", async (t) => {
+  start(t);
+  music.running = false;
+  const volume = await appear("volume", {}, plus);
+  await kind("volume").onDialRotate({ action: volume, payload: { settings: {}, ticks: 2 } });
+  await settle();
+  assert.equal(music.opened, 0);
+  await push(volume);
+  assert.equal(music.opened, 1);
+  leave(volume);
+});
