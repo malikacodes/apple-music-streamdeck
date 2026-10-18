@@ -153,3 +153,11 @@ export async function setRepeat(mode) {
 export async function setFavorite(on) {
   return (await ask(`    set favorited of current track to ${on === true}`)) !== CLOSED;
 }
+
+// Music has a "mute" I can read but not set: setting it fails with
+// error 9038, playing or not. So muting is done by the plugin, as
+// volume 0 with the old level remembered (see index.js).
+export async function setVolume(level) {
+  const safeLevel = Math.round(Math.max(0, Math.min(100, Number(level) || 0)));
+  return (await ask(`    set sound volume to ${safeLevel}`)) !== CLOSED;
+}

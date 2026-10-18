@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- Push always plays and pauses. This picks what a turn does, and
+         the bar on the strip follows it: volume, or how far into the song. -->
+    <sdpi-item label="Turning">
+      <sdpi-select setting="turns" default="volume">
+        <option value="volume">Changes the volume</option>
+        <option value="track">Skips songs</option>
+      </sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

@@ -2,7 +2,7 @@
 // sends pictures back. The drawing is in draw.js and everything that asks
 // Music something is in music.js.
 import streamDeck, { action, SingletonAction } from "@elgato/streamdeck";
-import { drawFavorite, drawNotice, drawPlayback, drawRepeat, drawShuffle } from "./draw.js";
+import { drawFavorite, drawMultimedia, drawNotice, drawPlayback, drawRepeat, drawShuffle, drawStripNotice, drawVolume } from "./draw.js";
 import * as music from "./music.js";
 import { poll } from "./poll.js";
 
@@ -64,8 +64,10 @@ function stopReadingIfEmpty() {
 // What every key and dial of this plugin has in common: its settings,
 // the last picture it was sent, a notice that can take it over for two
 // seconds, and the "Open Music" picture when Music is closed. Each kind
-// only says how it draws (draw) and what a press does (press).
+// only says how it draws (draw) and what a press does (press). A dial
+// says strip = true, and its picture goes to the strip instead.
 class MusicAction extends SingletonAction {
+  strip = false;
   settings = new Map();
   shown = new Map();
   notices = new Map();
@@ -103,10 +105,11 @@ class MusicAction extends SingletonAction {
   }
 
   picture(target) {
+    const say = this.strip ? drawStripNotice : drawNotice;
     const notice = this.notices.get(target.id);
-    if (notice && notice.until > Date.now()) return drawNotice(notice.text);
+    if (notice && notice.until > Date.now()) return say(notice.text);
     this.notices.delete(target.id);
-    if (now && !now.running) return drawNotice("Open Music");
+    if (now && !now.running) return say("Open Music");
     return this.draw(now ?? {}, this.settings.get(target.id) ?? {});
   }
 
@@ -116,22 +119,41 @@ class MusicAction extends SingletonAction {
     const svg = this.picture(target);
     if (this.shown.get(target.id) === svg) return;
     this.shown.set(target.id, svg);
-    await target.setImage(asImage(svg));
+    if (this.strip) await target.setFeedback({ canvas: asImage(svg) });
+    else await target.setImage(asImage(svg));
   }
 
   // A press while Music is closed opens it, whatever the key is.
   // Otherwise the key does its job, and "false" back from music.js
   // means Music closed in the second since the last read.
-  async onKeyDown(ev) {
+  async act(target, job) {
     try {
       if (now && !now.running) return await music.openMusic();
-      const open = await this.press(ev.action, now ?? {}, this.settings.get(ev.action.id) ?? {});
+      const open = await job(now ?? {}, this.settings.get(target.id) ?? {});
       if (open === false) now = music.NOT_RUNNING;
       await redraw();
     } catch (err) {
-      streamDeck.logger.error(`${this.manifestId} press failed: ${err.message}`);
-      await ev.action.showAlert();
+      streamDeck.logger.error(`${this.manifestId} failed: ${err.message}`);
+      await target.showAlert();
     }
+  }
+
+  onKeyDown(ev) {
+    return this.act(ev.action, (status, settings) => this.press(ev.action, status, settings));
+  }
+
+  // A dial's push and a tap on its strip do the same job. Inside a dial
+  // stack the push belongs to the stack, so the tap is the way in there.
+  onDialDown(ev) {
+    return this.act(ev.action, (status, settings) => this.press(ev.action, status, settings));
+  }
+
+  onTouchTap(ev) {
+    return this.act(ev.action, (status, settings) => this.press(ev.action, status, settings));
+  }
+
+  onDialRotate(ev) {
+    return this.act(ev.action, (status, settings) => this.turn(ev.action, ev.payload.ticks, status, settings));
   }
 }
 
@@ -191,11 +213,117 @@ class Favorite extends MusicAction {
   }
 }
 
+// Music won't let a script set its own mute, so muting is mine: the
+// volume goes to 0 and the level it was at is kept here, and the next
+// push puts it back. If the volume moves away from 0 some other way
+// (Music's own slider), it isn't muted any more. A read that was already
+// on its way when I pushed still says the old volume, so the first two
+// seconds after a mute don't count.
+let mutedFrom = null;
+let mutedAt = 0;
+function isMuted() {
+  const settled = Date.now() - mutedAt > NOTICE_MS && !sendingVolume;
+  if (mutedFrom !== null && settled && now?.running && now.volume > 0) mutedFrom = null;
+  return mutedFrom !== null || Boolean(now?.muted);
+}
+
+// Turning fast sends lots of small turns, each a few hundred
+// milliseconds of AppleScript. So the number on the strip moves on every
+// turn, but only one volume script runs at a time, and when it's done
+// it sends whatever the number is by then. Nothing piles up, and the
+// last turn always wins. A turn while muted starts from the level it
+// was muted at, like the volume keys on my keyboard.
+let wantedVolume = null;
+let sendingVolume = false;
+async function sendVolume(level) {
+  wantedVolume = Math.max(0, Math.min(100, level));
+  guess({ volume: wantedVolume });
+  await redraw();
+  if (sendingVolume) return true;
+  sendingVolume = true;
+  try {
+    let sent;
+    do {
+      sent = wantedVolume;
+      if (!(await music.setVolume(sent))) return false;
+    } while (wantedVolume !== sent);
+    return true;
+  } finally {
+    sendingVolume = false;
+    wantedVolume = null;
+  }
+}
+
+function turnVolume(ticks, step) {
+  if (!now?.running) return true;
+  const from = wantedVolume ?? mutedFrom ?? now.volume;
+  mutedFrom = null;
+  return sendVolume(from + ticks * step);
+}
+
+function toggleMute() {
+  if (!now?.running) return true;
+  if (isMuted()) {
+    const back = mutedFrom ?? 50;
+    mutedFrom = null;
+    return sendVolume(back);
+  }
+  mutedFrom = now.volume;
+  mutedAt = Date.now();
+  return sendVolume(0);
+}
+
+// Settings arrive as text, or not at all on a dial I've never opened
+// the settings of. A step that isn't one of the menu's choices is 5.
+function stepOf(settings) {
+  const step = Number(settings.step);
+  return [1, 2, 5, 10].includes(step) ? step : 5;
+}
+
+class Volume extends MusicAction {
+  strip = true;
+
+  draw(status) {
+    return drawVolume({ volume: status.volume, muted: isMuted() });
+  }
+
+  turn(target, ticks, status, settings) {
+    return turnVolume(ticks, stepOf(settings));
+  }
+
+  press() {
+    return toggleMute();
+  }
+}
+
+class Multimedia extends MusicAction {
+  strip = true;
+
+  draw(status, settings) {
+    return drawMultimedia({ ...status, muted: isMuted(), turns: settings.turns === "track" ? "track" : "volume" });
+  }
+
+  // A turn either changes the volume or skips songs, whichever the
+  // settings say. A fast spin is still one song, because a spin of
+  // five clicks shouldn't skip five songs by accident.
+  turn(target, ticks, status, settings) {
+    if (settings.turns !== "track") return turnVolume(ticks, 5);
+    return music.control(ticks > 0 ? "next" : "previous");
+  }
+
+  async press(target, status) {
+    guess({ playing: !status.playing });
+    return music.control("playpause");
+  }
+}
+
 const register = (name, Kind) => streamDeck.actions.registerAction(new (action({ UUID: `com.malikacodes.apple-music.${name}` })(Kind))());
 register("playback", Playback);
 register("shuffle", Shuffle);
 register("repeat", Repeat);
 register("favorite", Favorite);
+register("volume", Volume);
+register("multimedia", Multimedia);
 
 // connect() comes after the actions are registered.
 streamDeck.connect();

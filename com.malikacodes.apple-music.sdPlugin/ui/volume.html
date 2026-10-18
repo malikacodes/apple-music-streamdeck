@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- How far one click of the dial moves the volume. A dial I haven't
+         opened the settings of has nothing saved, and the plugin uses 5. -->
+    <sdpi-item label="One click">
+      <sdpi-select setting="step" default="5">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </sdpi-select>
+    </sdpi-item>
+  </body>
+</html>

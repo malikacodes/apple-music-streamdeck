@@ -122,3 +122,75 @@ export function drawFavorite({ on = false, track = true } = {}) {
   if (on && track) return key(`<path d="${HEART}" fill="${PINK}"/>`);
   return key(`<path d="${HEART}" fill="none" stroke="${track ? WHITE : DIM}" stroke-width="7" stroke-linejoin="round"/>`);
 }
+
+function strip(inside) {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100" font-family="${FONT}">`,
+    `<rect width="200" height="100" fill="${BLACK}"/>`,
+    inside,
+    `</svg>`,
+  ].join("");
+}
+
+// The strip's version of a notice: one line, in the middle.
+export function drawStripNotice(text) {
+  return strip(`<text x="100" y="56" font-size="17" font-weight="600" text-anchor="middle" fill="${WHITE}">${safe(fit(text, 180, 17))}</text>`);
+}
+
+// A bar that fills from the left. The empty part is dim and the full
+// part is the color handed in.
+function bar({ x, y, width, share, color }) {
+  const full = Math.max(0, Math.min(1, share)) * width;
+  return `<rect x="${x}" y="${y}" width="${width}" height="6" rx="3" fill="${DIM}"/>` + (full > 0 ? `<rect x="${x}" y="${y}" width="${full.toFixed(1)}" height="6" rx="3" fill="${color}"/>` : "");
+}
+
+// The Volume dial's strip: the word, the number, and a pink bar. Muted
+// says so in place of the number, and the bar goes dim, so a quick look
+// tells muted apart from turned all the way down. Before the first read
+// there's no number at all, rather than a 0 that isn't true.
+export function drawVolume({ volume, muted = false } = {}) {
+  const known = Number.isFinite(volume);
+  const level = known ? Math.round(Math.max(0, Math.min(100, volume))) : 0;
+  const shown = muted ? "Muted" : known ? level : "";
+  return strip(
+    `<text x="16" y="34" font-size="15" fill="${DIM}">Volume</text>` +
+      `<text x="184" y="44" font-size="${muted ? 20 : 34}" font-weight="700" text-anchor="end" fill="${muted ? DIM : WHITE}">${shown}</text>` +
+      bar({ x: 16, y: 68, width: 168, share: level / 100, color: muted ? DIM : PINK }),
+  );
+}
+
+// The rounded tile a song's art sits on. Art comes in as a data URI
+// (the picture packed into text) and is clipped to the tile's corners.
+// With no art yet, it's an outline with a note in it. Paused art is
+// dimmed: dark over black, not gray, so it still passes the black test.
+const NOTE = (x, y, s, color) =>
+  `<g transform="translate(${x} ${y}) scale(${s})" fill="${color}"><path d="M10 21V7l11-2.5v14" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/><ellipse cx="7.5" cy="21" rx="3.5" ry="2.8"/><ellipse cx="18.5" cy="18.5" rx="3.5" ry="2.8"/></g>`;
+
+function tile({ art, x, y, size, radius, dim = false, id }) {
+  if (!art) {
+    return `<rect x="${x + 1}" y="${y + 1}" width="${size - 2}" height="${size - 2}" rx="${radius}" fill="none" stroke="${DIM}" stroke-width="2"/>` + NOTE(x + size / 2 - size * 0.25, y + size / 2 - size * 0.25, size / 56, DIM);
+  }
+  return (
+    `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${radius}"/></clipPath>` +
+    `<image href="${art}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"${dim ? ' opacity="0.45"' : ""}/>`
+  );
+}
+
+// The Multimedia dial's strip: the art top left, the artist next to
+// it, and the song's name along the bottom, where it gets the whole
+// width of the strip. Next to the art there's only room for a few
+// letters, and a song name cut to "Get Me So…" isn't much use.
+// The bar is the volume when the dial turns the volume, and how far into
+// the song I am when it skips, so it always shows what a turn changes.
+export function drawMultimedia({ art, name, artist, playing = false, volume = 0, muted = false, position = 0, duration = 0, turns = "volume" } = {}) {
+  const parts = [tile({ art, x: 12, y: 8, size: 58, radius: 12, dim: Boolean(art) && !playing, id: "art" })];
+  if (!name) {
+    parts.push(`<text x="82" y="44" font-size="15" font-weight="600" fill="${DIM}">No track</text>`);
+    return strip(parts.join(""));
+  }
+  parts.push(`<text x="82" y="30" font-size="13" fill="${DIM}">${safe(fit(artist ?? "", 106, 13))}</text>`);
+  if (turns === "track") parts.push(bar({ x: 82, y: 48, width: 104, share: duration ? position / duration : 0, color: WHITE }));
+  else parts.push(bar({ x: 82, y: 48, width: 104, share: volume / 100, color: muted ? DIM : PINK }));
+  parts.push(`<text x="12" y="90" font-size="15" font-weight="600" fill="${WHITE}">${safe(fit(name, 176, 15))}</text>`);
+  return strip(parts.join(""));
+}

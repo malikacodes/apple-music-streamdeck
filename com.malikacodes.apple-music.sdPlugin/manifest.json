@@ -75,6 +75,50 @@
           "Image": "imgs/favorite-key"
         }
       ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.volume",
+      "Name": "Volume",
+      "Tooltip": "Turn for Music's volume, push to mute",
+      "Icon": "imgs/volume",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/volume.html",
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Volume",
+          "Push": "Mute",
+          "Touch": "Mute"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/volume-dial"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.multimedia",
+      "Name": "Multimedia",
+      "Tooltip": "What's playing, with volume or skipping on the turn",
+      "Icon": "imgs/multimedia",
+      "Controllers": ["Encoder"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/multimedia.html",
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "TriggerDescription": {
+          "Rotate": "Volume or skip",
+          "Push": "Play / Pause",
+          "Touch": "Play / Pause"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/multimedia-dial"
+        }
+      ]
     }
   ]
 }
