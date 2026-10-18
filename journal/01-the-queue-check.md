@@ -17,7 +17,7 @@ Two more things I found out on the way:
 - `name of current playlist` throws a type error when it's one of my playlists, but `persistent ID of current playlist` works. So I compare IDs, not names.
 - Music's shuffle has to be off first, or `play` of a playlist starts anywhere. The plugin does its own shuffling anyway.
 
-To jump to track 5, the plugin plays the playlist and then sends `next track` four times. Three in a row with no wait landed on track 4, so it keeps up.
+I also sent `next track` three times in a row with no wait, and it went from track 1 to track 4. So skipping ahead a few songs works, at least tonight.
 
 ## Check 2: can a streamed song sit in my playlist if it isn't in my library?
 

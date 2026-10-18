@@ -10,9 +10,18 @@
   "Icon": "imgs/plugin",
   "CategoryIcon": "imgs/note",
   "Category": "Apple Music",
-  "Nodejs": { "Version": "24" },
-  "Software": { "MinimumVersion": "7.1" },
-  "OS": [ { "Platform": "mac", "MinimumVersion": "13" } ],
+  "Nodejs": {
+    "Version": "24"
+  },
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    }
+  ],
   "Actions": [
     {
       "UUID": "com.malikacodes.apple-music.playback",
@@ -22,7 +31,50 @@
       "Controllers": ["Keypad"],
       "UserTitleEnabled": false,
       "PropertyInspectorPath": "ui/playback.html",
-      "States": [ { "Image": "imgs/playpause-key" } ]
+      "States": [
+        {
+          "Image": "imgs/playpause-key"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.shuffle",
+      "Name": "Shuffle",
+      "Tooltip": "Turn shuffle on or off",
+      "Icon": "imgs/shuffle",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [
+        {
+          "Image": "imgs/shuffle-key"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.repeat",
+      "Name": "Repeat",
+      "Tooltip": "Repeat off, the whole list, or one song",
+      "Icon": "imgs/repeat",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [
+        {
+          "Image": "imgs/repeat-key"
+        }
+      ]
+    },
+    {
+      "UUID": "com.malikacodes.apple-music.favorite",
+      "Name": "Favorite",
+      "Tooltip": "Favorite the song that is playing, or take it back",
+      "Icon": "imgs/favorite",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [
+        {
+          "Image": "imgs/favorite-key"
+        }
+      ]
     }
   ]
 }
