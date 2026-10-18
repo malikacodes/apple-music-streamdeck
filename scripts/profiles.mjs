@@ -31,7 +31,8 @@ export const DEVICES = {
 
 // Stream Deck's own Switch Profile action. A plugin can't open my Home
 // profile (it isn't the plugin's), but this built-in key can. It gets a
-// picture of its own (home.svg, next to this file): the white house, no
+// picture of its own (home.svg, next to this file): Stream Deck's own
+// white house, the rounded one with the door, on pure black and with no
 // words, like the Home key on all my pages.
 const SWITCH_PROFILE = "com.elgato.streamdeck.profile.rotate";
 const HOME_IMAGE = "home.png";
