@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawAddTo, drawAirPlay, drawCollection, drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawPlayPlaylist, drawQueue, drawRepeat, drawSearch, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
+import { barColor, drawAddTo, drawAirPlay, drawCollection, drawFavorite, drawMultimedia, drawNotice, drawNowPlaying, drawPlayback, drawPlayPlaylist, drawQueue, drawRepeat, drawSearch, drawShuffle, drawStripNotice, drawVolume, fit } from "../src/draw.js";
 
 // A tiny real JPEG, packed as a data URI, to stand in for album art.
 const ART = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
@@ -63,12 +63,13 @@ const pictures = {
 };
 
 // The deck is pure black, so anything else behind a picture is a gray
-// square. And the only colors are my four: black, white, the dim gray
-// for "off", and pink. A dark gray sneaking in would show as a box.
+// square. And the only colors are my four (black, white, the dim gray
+// for "off", and pink) plus the volume bar's dark track, the one groove
+// shared with my Audio Dial. Any other dark gray would show as a box.
 test("every picture is on pure black and uses only my four colors", () => {
   for (const [name, svg] of Object.entries(pictures)) {
     assert.match(svg, /^<svg[^>]*><rect width="\d+" height="\d+" fill="#000000"\/>/, name);
-    for (const color of svg.match(/#[0-9a-f]{6}/gi)) assert.ok(["#000000", "#ffffff", "#5c5c62", "#fc3c44"].includes(color.toLowerCase()), `${name} uses ${color}`);
+    for (const color of svg.match(/#[0-9a-f]{6}/gi)) assert.ok(["#000000", "#ffffff", "#5c5c62", "#fc3c44", "#2c2c30"].includes(color.toLowerCase()), `${name} uses ${color}`);
   }
 });
 
@@ -123,7 +124,7 @@ test("fit cuts a long name with an ellipsis and leaves a short one", () => {
 test("muted and volume 0 look different", () => {
   assert.notEqual(pictures["volume 0"], pictures["volume muted"]);
   assert.ok(pictures["volume muted"].includes(">Muted<"));
-  assert.ok(pictures["volume 100"].includes(">100<"));
+  assert.ok(pictures["volume 100"].includes(">100%<"));
 });
 
 // A long song name on the strip is one line, cut with an ellipsis, so
@@ -149,7 +150,7 @@ test("the strip's art tile shows, waits and dims", () => {
 // into the song in white.
 test("the multimedia bar follows what turning does", () => {
   assert.ok(pictures["multimedia playing"].includes('fill="#fc3c44"'));
-  assert.ok(pictures["multimedia track mode"].includes('width="34.7" height="6" rx="3" fill="#ffffff"'));
+  assert.ok(pictures["multimedia track mode"].includes('width="35" height="8" rx="4" fill="#ffffff"'));
 });
 
 // The strip is drawn once before Music has answered. A 0 there would
@@ -232,4 +233,32 @@ test("the Saved Search strip draws no words, waiting, nothing, one and many", ()
   assert.ok(pictures["search nothing"].includes(">Nothing matches<") && pictures["search nothing"].includes("“zzzqqq”"));
   assert.ok(pictures["search one"].includes(">1 of 1<") && pictures["search one"].includes(">Nuff Man a Come<"));
   assert.ok(pictures["search many"].includes(">3 of 3<") && pictures["search many"].includes(">Three<"));
+});
+
+// Laid out exactly like my Audio Dial's strip, so the two dials look the
+// same side by side: name, percent, and an 8px bar on its dark track.
+test("the Volume strip matches my Audio Dial's layout", () => {
+  const svg = drawVolume({ volume: 54 });
+  assert.ok(svg.includes('<text x="14" y="30" font-size="15" font-weight="600" fill="#ffffff">Music</text>'));
+  assert.ok(svg.includes('<text x="14" y="64" font-size="22" font-weight="600" fill="#ffffff">54%</text>'));
+  assert.ok(svg.includes('<rect x="14" y="78" width="172" height="8" rx="4" fill="#2c2c30"/>'));
+  assert.ok(svg.includes('<rect x="14" y="78" width="93" height="8" rx="4" fill="#fc3c44"/>'));
+});
+
+// 1% is still a dot you can see, and 0% is an empty track, not a dot.
+test("the bar is never thinner than 8 once there's any volume", () => {
+  assert.ok(drawVolume({ volume: 1 }).includes('width="8" height="8" rx="4" fill="#fc3c44"'));
+  assert.ok(!drawVolume({ volume: 0 }).includes('fill="#fc3c44"'));
+});
+
+// The bar color is a setting typed on the settings page. A plain hex
+// is used, anything else falls back to the pink, so junk can't break
+// the picture.
+test("the bar color setting is used when it's a plain hex, pink otherwise", () => {
+  assert.equal(barColor("#f2a7c3"), "#f2a7c3");
+  assert.equal(barColor("pink"), "#fc3c44");
+  assert.equal(barColor('#fff" onload="x'), "#fc3c44");
+  assert.equal(barColor(undefined), "#fc3c44");
+  assert.ok(drawVolume({ volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
+  assert.ok(drawMultimedia({ name: "Patient", volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
 });

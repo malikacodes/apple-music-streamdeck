@@ -73,8 +73,11 @@ mock.module(new URL("../src/run.js", import.meta.url).href, {
 });
 await import("../src/index.js");
 
+// Lets every promise chain in flight finish, including a status read
+// that started before a press. Five rounds was sometimes one short on a
+// busy Mac, and then that read's older answer landed after the press.
 const settle = async () => {
-  for (let i = 0; i < 5; i++) await new Promise((done) => setImmediate(done));
+  for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done));
 };
 const kind = (name) => deck.instances.find((it) => it.manifestId === `com.malikacodes.apple-music.${name}`);
 const xl = { id: "xl-1", type: 2, isConnected: true };
@@ -163,7 +166,7 @@ test("the Volume dial mutes to 0 and comes back to where it was", async (t) => {
   assert.ok(volume.pictures.at(-1).includes(">Muted<"));
   await push(volume);
   assert.equal(music.volume, 40);
-  assert.ok(volume.pictures.at(-1).includes(">40<"));
+  assert.ok(volume.pictures.at(-1).includes(">40%<"));
   leave(volume);
 });
 
@@ -243,7 +246,7 @@ const turn = async (key, ticks) => {
   await kind(key.manifestId.split(".").pop()).onDialRotate({ action: key, payload: { settings: key.settings, ticks } });
   await settle();
 };
-const shownPercent = (key) => key.pictures.at(-1).match(/>(\d+)%?</)?.[1];
+const shownPercent = (key) => key.pictures.at(-1).match(/>(\d+)%</)?.[1];
 
 // The janky turn: a once-a-second read landing mid-turn with Music's
 // older volume used to pull the strip's number backwards. For a second

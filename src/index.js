@@ -435,8 +435,8 @@ function stepOf(settings) {
 class Volume extends MusicAction {
   strip = true;
 
-  draw(status) {
-    return drawVolume({ volume: status.volume, muted: isMuted() });
+  draw(status, settings) {
+    return drawVolume({ volume: status.volume, muted: isMuted(), color: settings.volumeColor });
   }
 
   turn(target, ticks, status, settings) {
@@ -452,7 +452,7 @@ class Multimedia extends MusicAction {
   strip = true;
 
   draw(status, settings) {
-    return drawMultimedia({ ...status, muted: isMuted(), turns: settings.turns === "track" ? "track" : "volume" });
+    return drawMultimedia({ ...status, muted: isMuted(), turns: settings.turns === "track" ? "track" : "volume", color: settings.volumeColor });
   }
 
   // A turn either changes the volume or skips songs, whichever the

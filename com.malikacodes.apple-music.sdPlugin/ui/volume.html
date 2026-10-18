@@ -3,6 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <script src="sdpi-components.js"></script>
+    <!-- On its own a color swatch stretches across the whole row, which is
+         a lot of pink. This keeps it to a small box. -->
+    <style>
+      sdpi-color {
+        display: block;
+        width: 36px;
+      }
+    </style>
   </head>
   <body>
     <!-- How many percent one click of the dial moves the volume. A dial I
@@ -16,6 +24,11 @@
         <option value="5">5%</option>
         <option value="10">10%</option>
       </sdpi-select>
+    </sdpi-item>
+    <!-- The volume bar's color. It starts out as this plugin's pink.
+         Anything that isn't a plain hex color falls back to that. -->
+    <sdpi-item label="Volume color">
+      <sdpi-color setting="volumeColor" default="#fc3c44"></sdpi-color>
     </sdpi-item>
   </body>
 </html>
