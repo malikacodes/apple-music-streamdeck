@@ -49,7 +49,12 @@ function answer(script) {
   if (script.includes("Stream Deck Queue")) return "none";
   let found;
   if ((found = script.match(/set song repeat to (\w+)/))) music.repeat = found[1];
-  if ((found = script.match(/set sound volume to (\d+)/))) music.volume = Number(found[1]);
+  // A lagging Music takes the new volume but still reports the old one
+  // for a while, the way the real one does mid-turn.
+  if ((found = script.match(/set sound volume to (\d+)/))) {
+    music.sent = Number(found[1]);
+    if (!music.lagging) music.volume = music.sent;
+  }
   if ((found = script.match(/set shuffle enabled to (\w+)/))) music.shuffle = found[1] === "true";
   if ((found = script.match(/set favorited of current track to (\w+)/))) music.favorited = found[1] === "true";
   return "";
@@ -100,10 +105,12 @@ function leave(key) {
   deck.keys.splice(deck.keys.indexOf(key), 1);
   kind(key.manifestId.split(".").pop()).onWillDisappear({ action: key });
 }
-function start(t) {
-  t.mock.timers.enable({ apis: ["setInterval"] });
+// Fake clocks for the timer, and for Date too when a test hands in a
+// starting time, so "a second and a half later" takes no real time.
+function start(t, { clock } = {}) {
+  t.mock.timers.enable(clock === undefined ? { apis: ["setInterval"] } : { apis: ["setInterval", "Date"], now: clock });
   for (const key of [...deck.keys]) leave(key);
-  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0 });
+  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, lagging: false, sent: null });
   deck.switched = [];
   deck.sentToPage = [];
   deck.devices = [xl, plus];
@@ -230,4 +237,57 @@ test("turning a dial with Music closed doesn't open Music", async (t) => {
   await push(volume);
   assert.equal(music.opened, 1);
   leave(volume);
+});
+
+const turn = async (key, ticks) => {
+  await kind(key.manifestId.split(".").pop()).onDialRotate({ action: key, payload: { settings: key.settings, ticks } });
+  await settle();
+};
+const shownPercent = (key) => key.pictures.at(-1).match(/>(\d+)%?</)?.[1];
+
+// The janky turn: a once-a-second read landing mid-turn with Music's
+// older volume used to pull the strip's number backwards. For a second
+// and a half after a turn, the turn's own number wins.
+test("an older volume read during a turn doesn't move the strip's number", async (t) => {
+  start(t, { clock: 1_000_000 });
+  const volume = await appear("volume", {}, plus);
+  music.lagging = true;
+  await turn(volume, 2);
+  assert.equal(music.sent, 46, "two clicks of the default 3");
+  assert.equal(shownPercent(volume), "46");
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(shownPercent(volume), "46", "the read still said 40, and the strip kept 46");
+  await turn(volume, 1);
+  assert.equal(music.sent, 49, "the next click starts from 46, not the stale 40");
+  leave(volume);
+});
+
+// Once the window is over, Music's real number is trusted again, so a
+// guess that was wrong gets put right.
+test("after the trust window the real volume shows again", async (t) => {
+  start(t, { clock: 2_000_000 });
+  const volume = await appear("volume", {}, plus);
+  music.lagging = true;
+  await turn(volume, 1);
+  assert.equal(shownPercent(volume), "43");
+  t.mock.timers.tick(2000);
+  await settle();
+  assert.equal(shownPercent(volume), "40");
+  leave(volume);
+});
+
+// A turn draws only the dials showing the volume, once. Keys stay put
+// until the next read, so a fast spin can't flood the deck with pictures.
+test("a turn redraws the volume dials only", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  const media = await appear("multimedia", {}, plus);
+  const shuffle = await appear("shuffle");
+  const before = { volume: volume.pictures.length, media: media.pictures.length, shuffle: shuffle.pictures.length };
+  await turn(volume, 1);
+  assert.equal(volume.pictures.length, before.volume + 1);
+  assert.equal(media.pictures.length, before.media + 1);
+  assert.equal(shuffle.pictures.length, before.shuffle);
+  for (const key of [volume, media, shuffle]) leave(key);
 });

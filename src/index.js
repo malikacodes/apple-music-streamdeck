@@ -92,6 +92,10 @@ async function readMusic() {
     }
   }
   now = { ...status, art };
+  // Right after a turn, Music's answer is still catching up with it. See
+  // trustedVolume() below.
+  const mine = trustedVolume();
+  if (mine !== null) now.volume = mine;
   await redraw();
 }
 function startReading() {
@@ -181,12 +185,17 @@ class MusicAction extends SingletonAction {
   //
   // A turn is different: brushing a dial shouldn't start Music, so a
   // turn while it's closed does nothing.
-  async act(target, job, { opens = true } = {}) {
+  //
+  // A turn draws only what it changed, inside its own turn(). Fast turns
+  // come many a second, and redrawing every key and dial on each one blew
+  // past the ten pictures a second Stream Deck takes for the whole
+  // plugin. The once a second read redraws the rest.
+  async act(target, job, { opens = true, turning = false } = {}) {
     try {
       if (now && !now.running) return opens ? await music.openMusic() : undefined;
       const open = await job(now ?? {}, this.settings.get(target.id) ?? {});
       if (open === false) now = music.NOT_RUNNING;
-      await redraw();
+      if (open === false || !turning) await redraw();
     } catch (err) {
       streamDeck.logger.error(`${this.manifestId} failed: ${err.message}`);
       await target.showAlert();
@@ -208,7 +217,7 @@ class MusicAction extends SingletonAction {
   }
 
   onDialRotate(ev) {
-    return this.act(ev.action, (status, settings) => this.turn(ev.action, ev.payload.ticks, status, settings), { opens: false });
+    return this.act(ev.action, (status, settings) => this.turn(ev.action, ev.payload.ticks, status, settings), { opens: false, turning: true });
   }
 }
 
@@ -354,8 +363,9 @@ let wantedVolume = null;
 let sendingVolume = false;
 async function sendVolume(level) {
   wantedVolume = Math.max(0, Math.min(100, level));
+  myVolume = { level: wantedVolume, at: Date.now() };
   guess({ volume: wantedVolume });
-  await redraw();
+  await redrawVolume();
   if (sendingVolume) return true;
   sendingVolume = true;
   try {
@@ -363,12 +373,36 @@ async function sendVolume(level) {
     do {
       sent = wantedVolume;
       if (!(await music.setVolume(sent))) return false;
+      myVolume = { level: sent, at: Date.now() };
     } while (wantedVolume !== sent);
     return true;
   } finally {
     sendingVolume = false;
     wantedVolume = null;
   }
+}
+
+// Music's own volume lags a turn by a read or two. When the once a
+// second read landed mid-turn, its older number replaced the one I'd
+// just turned to, and the next click started from there, so the strip
+// jumped backwards. So for a second and a half after the last send (the
+// same TRUST_MS my Audio Dial uses), the turn's own number wins. After
+// that the read is trusted again, which also puts a wrong guess right.
+const TRUST_MS = 1500;
+let myVolume = null;
+function trustedVolume() {
+  if (!myVolume) return null;
+  if (sendingVolume || Date.now() - myVolume.at < TRUST_MS) return myVolume.level;
+  myVolume = null;
+  return null;
+}
+
+// Only the dials that show the volume: Volume, and Multimedia when its
+// turn changes the volume. Everything else waits for the once a second
+// read.
+async function redrawVolume() {
+  const showing = onScreen().filter(([kind, target]) => kind instanceof Volume || (kind instanceof Multimedia && kind.settings.get(target.id)?.turns !== "track"));
+  await Promise.all(showing.map(([kind, target]) => kind.render(target)));
 }
 
 function turnVolume(ticks, step) {
@@ -391,10 +425,11 @@ function toggleMute() {
 }
 
 // Settings arrive as text, or not at all on a dial I've never opened
-// the settings of. A step that isn't one of the menu's choices is 5.
+// the settings of. A step that isn't one of the menu's choices is 3,
+// the same as my Audio Dial, so the two dials turn alike.
 function stepOf(settings) {
   const step = Number(settings.step);
-  return [1, 2, 5, 10].includes(step) ? step : 5;
+  return [1, 2, 3, 5, 10].includes(step) ? step : 3;
 }
 
 class Volume extends MusicAction {
@@ -424,8 +459,11 @@ class Multimedia extends MusicAction {
   // settings say. A fast spin is still one song, because a spin of
   // five clicks shouldn't skip five songs by accident.
   turn(target, ticks, status, settings) {
-    if (settings.turns !== "track") return turnVolume(ticks, 5);
-    return music.control(ticks > 0 ? "next" : "previous");
+    if (settings.turns !== "track") return turnVolume(ticks, 3);
+    return music.control(ticks > 0 ? "next" : "previous").then(async (open) => {
+      await this.render(target);
+      return open;
+    });
   }
 
   async press(target, status) {
