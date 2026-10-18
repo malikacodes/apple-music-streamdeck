@@ -1,0 +1,14 @@
+{
+  "name": "apple-music-streamdeck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stream Deck keys and dials for the Music app on my Mac",
+  "dependencies": {
+    "@elgato/streamdeck": "3.0.1"
+  },
+  "scripts": {
+    "check": "for f in src/*.js test/*.js; do node --check \"$f\" || exit 1; done",
+    "test": "node --test --experimental-test-module-mocks test/*.test.js"
+  }
+}

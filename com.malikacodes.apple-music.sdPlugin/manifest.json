@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.malikacodes.apple-music",
+  "Name": "Apple Music",
+  "Author": "Malika Pixels",
+  "Description": "Keys and dials for the Music app on my Mac, the way Elgato's Spotify plugin does it for Spotify.",
+  "Version": "0.1.0.0",
+  "SDKVersion": 3,
+  "CodePath": "bin/plugin.js",
+  "Icon": "imgs/plugin",
+  "CategoryIcon": "imgs/note",
+  "Category": "Apple Music",
+  "Nodejs": { "Version": "24" },
+  "Software": { "MinimumVersion": "7.1" },
+  "OS": [ { "Platform": "mac", "MinimumVersion": "13" } ],
+  "Actions": [
+    {
+      "UUID": "com.malikacodes.apple-music.playback",
+      "Name": "Playback",
+      "Tooltip": "Play or pause, go back a track, or skip ahead",
+      "Icon": "imgs/playpause",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "ui/playback.html",
+      "States": [ { "Image": "imgs/playpause-key" } ]
+    }
+  ]
+}

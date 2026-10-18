@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Elgato's settings components. Each one saves into this key's
+         settings under the name in "setting". -->
+    <script src="sdpi-components.js"></script>
+  </head>
+  <body>
+    <!-- One action with three jobs, so the deck's action list stays short.
+         A key I haven't touched has no setting saved, and the plugin
+         treats that as Play/Pause. -->
+    <sdpi-item label="This key">
+      <sdpi-select setting="job" default="playpause">
+        <option value="playpause">Play / Pause</option>
+        <option value="previous">Previous track</option>
+        <option value="next">Next track</option>
+      </sdpi-select>
+    </sdpi-item>
+  </body>
+</html>
