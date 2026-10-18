@@ -8,9 +8,10 @@ const FONT = "-apple-system, Helvetica, sans-serif";
 const BLACK = "#000000";
 const WHITE = "#ffffff";
 const DIM = "#5c5c62";
-// Apple Music's pink-red. It's the only color: the heart, the volume
-// bar and anything that's switched on.
-const PINK = "#fc3c44";
+// My soft pink, the one accent in all my plugins (white is the default,
+// black the background). It's the only color here: the heart, the
+// volume bar and anything that's switched on.
+const PINK = "#f2a7c3";
 
 // Text I typed can have a & or a < in it, and in SVG those mean
 // something. This swaps them for their safe spellings.
@@ -150,7 +151,7 @@ function bar({ x, y, width, share, color }) {
 }
 
 // The bar's color comes from the dial's settings and goes straight into
-// the SVG, so anything that isn't a plain hex color like #fc3c44 falls
+// the SVG, so anything that isn't a plain hex color like #f2a7c3 falls
 // back to the pink instead of breaking the picture.
 export function barColor(value) {
   return /^#[0-9a-f]{6}$/i.test(value ?? "") ? value : PINK;

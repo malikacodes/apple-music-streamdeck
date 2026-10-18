@@ -69,7 +69,7 @@ const pictures = {
 test("every picture is on pure black and uses only my four colors", () => {
   for (const [name, svg] of Object.entries(pictures)) {
     assert.match(svg, /^<svg[^>]*><rect width="\d+" height="\d+" fill="#000000"\/>/, name);
-    for (const color of svg.match(/#[0-9a-f]{6}/gi)) assert.ok(["#000000", "#ffffff", "#5c5c62", "#fc3c44", "#2c2c30"].includes(color.toLowerCase()), `${name} uses ${color}`);
+    for (const color of svg.match(/#[0-9a-f]{6}/gi)) assert.ok(["#000000", "#ffffff", "#5c5c62", "#f2a7c3", "#2c2c30"].includes(color.toLowerCase()), `${name} uses ${color}`);
   }
 });
 
@@ -149,7 +149,7 @@ test("the strip's art tile shows, waits and dims", () => {
 // The bar shows what a turn will change: volume in pink, or how far
 // into the song in white.
 test("the multimedia bar follows what turning does", () => {
-  assert.ok(pictures["multimedia playing"].includes('fill="#fc3c44"'));
+  assert.ok(pictures["multimedia playing"].includes('fill="#f2a7c3"'));
   assert.ok(pictures["multimedia track mode"].includes('width="35" height="8" rx="4" fill="#ffffff"'));
 });
 
@@ -176,8 +176,8 @@ test("the Now Playing key draws art, paused, waiting and nothing", () => {
 // playing nothing. The playing one gets its pink ring.
 test("Play Playlist says pick one, and rings the one playing", () => {
   assert.ok(pictures["play playlist unset"].includes(">Pick a<") && pictures["play playlist unset"].includes(">playlist<"));
-  assert.ok(!pictures["play playlist"].includes('stroke="#fc3c44"'));
-  assert.ok(pictures["play playlist playing"].includes('stroke="#fc3c44"'));
+  assert.ok(!pictures["play playlist"].includes('stroke="#f2a7c3"'));
+  assert.ok(pictures["play playlist playing"].includes('stroke="#f2a7c3"'));
   assert.ok(pictures["play playlist long name no art"].includes("…"));
 });
 
@@ -216,13 +216,13 @@ test("Add to playlist draws unset, set and the tick", () => {
 // now is pink, the highlighted one has its name written out.
 test("the AirPlay strip draws none, one and many", () => {
   assert.ok(pictures["airplay none"].includes(">No AirPlay devices<"));
-  assert.ok(pictures["airplay one"].includes('stroke="#fc3c44"'));
+  assert.ok(pictures["airplay one"].includes('stroke="#f2a7c3"'));
   assert.ok(!pictures["airplay one"].includes('opacity="0.3"'));
   assert.ok(pictures["airplay many"].includes(">Living Room<"));
   // Living Room is picked, so the MacBook (playing now) sits to its left
   // in pink and the Kitchen to its right in the dim gray.
   assert.equal((pictures["airplay many"].match(/stroke="#5c5c62"/g) ?? []).length, 1);
-  assert.equal((pictures["airplay many"].match(/stroke="#fc3c44"/g) ?? []).length, 1);
+  assert.equal((pictures["airplay many"].match(/stroke="#f2a7c3"/g) ?? []).length, 1);
 });
 
 // Saved Search's empty states each say something different, and nothing
@@ -242,13 +242,13 @@ test("the Volume strip matches my Audio Dial's layout", () => {
   assert.ok(svg.includes('<text x="14" y="30" font-size="15" font-weight="600" fill="#ffffff">Music</text>'));
   assert.ok(svg.includes('<text x="14" y="64" font-size="22" font-weight="600" fill="#ffffff">54%</text>'));
   assert.ok(svg.includes('<rect x="14" y="78" width="172" height="8" rx="4" fill="#2c2c30"/>'));
-  assert.ok(svg.includes('<rect x="14" y="78" width="93" height="8" rx="4" fill="#fc3c44"/>'));
+  assert.ok(svg.includes('<rect x="14" y="78" width="93" height="8" rx="4" fill="#f2a7c3"/>'));
 });
 
 // 1% is still a dot you can see, and 0% is an empty track, not a dot.
 test("the bar is never thinner than 8 once there's any volume", () => {
-  assert.ok(drawVolume({ volume: 1 }).includes('width="8" height="8" rx="4" fill="#fc3c44"'));
-  assert.ok(!drawVolume({ volume: 0 }).includes('fill="#fc3c44"'));
+  assert.ok(drawVolume({ volume: 1 }).includes('width="8" height="8" rx="4" fill="#f2a7c3"'));
+  assert.ok(!drawVolume({ volume: 0 }).includes('fill="#f2a7c3"'));
 });
 
 // The bar color is a setting typed on the settings page. A plain hex
@@ -256,9 +256,9 @@ test("the bar is never thinner than 8 once there's any volume", () => {
 // the picture.
 test("the bar color setting is used when it's a plain hex, pink otherwise", () => {
   assert.equal(barColor("#f2a7c3"), "#f2a7c3");
-  assert.equal(barColor("pink"), "#fc3c44");
-  assert.equal(barColor('#fff" onload="x'), "#fc3c44");
-  assert.equal(barColor(undefined), "#fc3c44");
+  assert.equal(barColor("pink"), "#f2a7c3");
+  assert.equal(barColor('#fff" onload="x'), "#f2a7c3");
+  assert.equal(barColor(undefined), "#f2a7c3");
   assert.ok(drawVolume({ volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
   assert.ok(drawMultimedia({ name: "Patient", volume: 50, color: "#f2a7c3" }).includes('fill="#f2a7c3"'));
 });

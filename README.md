@@ -2,7 +2,7 @@
 
 Keys and dials for the Music app on my Mac, the way Elgato's Spotify plugin does it for Spotify, plus one key on my XL that shows the album art of whatever is playing and opens the Apple Music page on my Stream Deck + when I press it.
 
-Elgato has its own Apple Music plugin, but it's keys only. I wanted dials, a playlist browser, a queue I can see, and everything drawn the same way as my other plugins: black, white and Apple Music's pink.
+Elgato has its own Apple Music plugin, but it's keys only. I wanted dials, a playlist browser, a queue I can see, and everything drawn the same way as my other plugins: black, white and my soft pink.
 
 ## What's in it
 
