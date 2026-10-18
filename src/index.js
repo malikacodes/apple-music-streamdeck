@@ -362,11 +362,12 @@ function isMuted() {
 // was muted at, like the volume keys on my keyboard.
 let wantedVolume = null;
 let sendingVolume = false;
-async function sendVolume(level) {
+async function sendVolume(level, turned) {
   wantedVolume = Math.max(0, Math.min(100, level));
   lastVolumeSend = Date.now();
   guess({ volume: wantedVolume });
-  await redrawVolume();
+  if (turned) drawTurned(turned);
+  else await redrawVolume();
   if (sendingVolume) return true;
   sendingVolume = true;
   try {
@@ -376,6 +377,9 @@ async function sendVolume(level) {
       if (!(await music.setVolume(sent))) return false;
       lastVolumeSend = Date.now();
     } while (wantedVolume !== sent);
+    // The spin is over, so every dial showing the volume catches up
+    // once, the other one included.
+    if (turned) await redrawVolume();
     return true;
   } finally {
     sendingVolume = false;
@@ -414,11 +418,44 @@ async function redrawVolume() {
   await Promise.all(showing.map(([kind, target]) => kind.render(target)));
 }
 
-function turnVolume(ticks, step) {
+// During a spin, only the dial I'm turning redraws, and at most once
+// every DRAW_MS. Stream Deck takes about ten pictures a second for the
+// whole plugin, and a fast spin is more clicks than that. Every click
+// used to redraw this strip and the Multimedia one (about 50 KB with
+// its album art), twenty pictures a second, and the deck froze the
+// strips while it caught up. The sound isn't held back: every click
+// still goes into wantedVolume and gets sent.
+//
+// The first click draws straight away so the dial feels instant. A
+// click inside the window asks for one more picture at its end (one
+// setTimeout, a single shot, not a repeating timer), which draws
+// whatever the number is by then, so the last picture is always the
+// last number. The other dial catches up once when the spin's sends
+// are done (see sendVolume).
+const DRAW_MS = 100;
+let turnDrawnAt = 0;
+let turnDrawLater = null;
+let turnTarget = null;
+function drawTurned(turned) {
+  turnTarget = turned;
+  const wait = DRAW_MS - (Date.now() - turnDrawnAt);
+  if (wait <= 0 && !turnDrawLater) {
+    turnDrawnAt = Date.now();
+    void turned.kind.render(turned.target);
+    return;
+  }
+  turnDrawLater ??= setTimeout(() => {
+    turnDrawLater = null;
+    turnDrawnAt = Date.now();
+    void turnTarget.kind.render(turnTarget.target);
+  }, Math.max(0, wait));
+}
+
+function turnVolume(ticks, step, turned) {
   if (!now?.running) return true;
   const from = wantedVolume ?? mutedFrom ?? now.volume;
   mutedFrom = null;
-  return sendVolume(from + ticks * step);
+  return sendVolume(from + ticks * step, turned);
 }
 
 function toggleMute() {
@@ -449,7 +486,7 @@ class Volume extends MusicAction {
   }
 
   turn(target, ticks, status, settings) {
-    return turnVolume(ticks, stepOf(settings));
+    return turnVolume(ticks, stepOf(settings), { kind: this, target });
   }
 
   press() {
@@ -468,7 +505,7 @@ class Multimedia extends MusicAction {
   // settings say. A fast spin is still one song, because a spin of
   // five clicks shouldn't skip five songs by accident.
   turn(target, ticks, status, settings) {
-    if (settings.turns !== "track") return turnVolume(ticks, 3);
+    if (settings.turns !== "track") return turnVolume(ticks, 3, { kind: this, target });
     return music.control(ticks > 0 ? "next" : "previous").then(async (open) => {
       await this.render(target);
       return open;

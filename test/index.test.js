@@ -118,7 +118,7 @@ function leave(key) {
 let lastClock = 10_000_000;
 function start(t, { clock } = {}) {
   lastClock += 10_000_000;
-  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: clock ?? lastClock });
+  t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: clock ?? lastClock });
   for (const key of [...deck.keys]) leave(key);
   Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, lagging: false, sent: null, hold: null });
   deck.switched = [];
@@ -344,4 +344,74 @@ test("Music closing mid-turn shows up on the first read after the window", async
   await settle();
   assert.ok(volume.pictures.at(-1).includes("Open Music"));
   leave(volume);
+});
+
+// A fast spin is more clicks a second than Stream Deck takes pictures.
+// Inside one 100 ms window the turned dial draws the first click at once
+// and one more picture at the end of the window, with the last number.
+// The sound isn't throttled: Music still gets the last number.
+test("a burst of turns draws the first click and one picture with the final number", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  let release;
+  music.hold = new Promise((done) => (release = done));
+  const before = volume.pictures.length;
+  const turns = [];
+  for (let i = 0; i < 5; i++) {
+    turns.push(kind("volume").onDialRotate({ action: volume, payload: { settings: {}, ticks: 1 } }));
+    await settle();
+  }
+  assert.equal(volume.pictures.length, before + 1, "only the first click drew inside the window");
+  assert.equal(shownPercent(volume), "43");
+  t.mock.timers.tick(100);
+  await settle();
+  assert.equal(volume.pictures.length, before + 2, "one more picture at the end of the window");
+  assert.equal(shownPercent(volume), "55", "and it shows the last click");
+  music.hold = null;
+  release();
+  await Promise.all(turns);
+  await settle();
+  assert.equal(music.sent, 55, "Music got the last number");
+  leave(volume);
+});
+
+// Once the window has passed, the next click draws straight away again.
+test("a turn after the window redraws at once", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  await turn(volume, 1);
+  t.mock.timers.tick(200);
+  await settle();
+  const before = volume.pictures.length;
+  await turn(volume, 1);
+  assert.ok(volume.pictures.length > before);
+  assert.equal(shownPercent(volume), "46");
+  leave(volume);
+});
+
+// During a spin on the Volume dial the Multimedia strip (heavy with its
+// album art) stays put, and catches up once when the spin's sends are
+// done.
+test("the other dial waits for the end of the spin, then catches up once", async (t) => {
+  start(t);
+  const volume = await appear("volume", {}, plus);
+  const media = await appear("multimedia", {}, plus);
+  let release;
+  music.hold = new Promise((done) => (release = done));
+  const before = media.pictures.length;
+  const turns = [];
+  for (let i = 0; i < 4; i++) {
+    turns.push(kind("volume").onDialRotate({ action: volume, payload: { settings: {}, ticks: 1 } }));
+    await settle();
+    t.mock.timers.tick(100);
+    await settle();
+  }
+  assert.equal(media.pictures.length, before, "Multimedia didn't draw during the spin");
+  music.hold = null;
+  release();
+  await Promise.all(turns);
+  await settle();
+  assert.equal(media.pictures.length, before + 1, "one catch-up picture at the end");
+  leave(volume);
+  leave(media);
 });
