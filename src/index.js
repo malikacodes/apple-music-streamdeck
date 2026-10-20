@@ -317,18 +317,20 @@ class NowPlaying extends MusicAction {
     return drawNowPlaying(status);
   }
 
-  // A press sends my + to the Apple Music page, whatever Music is doing,
-  // so it skips the "Open Music" rule the other keys follow. A plugin
-  // can only open pages it ships with, which is why it's always this
-  // page. The first press ever only installs it (Stream Deck asks), and
-  // the second press is the one that switches.
+  // A press while Music is closed opens it, like every other key: this
+  // is the only music key on my XL, so after a restart it's the one
+  // that has to wake Music up. Otherwise a press sends my + to the
+  // Apple Music page. A plugin can only open pages it ships with, which
+  // is why it's always this page. The first press ever only installs it
+  // (Stream Deck asks), and the second press is the one that switches.
   async onKeyDown(ev) {
-    const where = whereToOpen(ev.payload.settings?.openOn, ev.action.device, [...streamDeck.devices]);
-    if (!where) return ev.action.showAlert();
     try {
+      if (now && !now.running) return await music.openMusic();
+      const where = whereToOpen(ev.payload.settings?.openOn, ev.action.device, [...streamDeck.devices]);
+      if (!where) return ev.action.showAlert();
       await streamDeck.profiles.switchToProfile(where.deck, where.profile);
     } catch (err) {
-      streamDeck.logger.error(`Couldn't open the Apple Music page: ${err.message}`);
+      streamDeck.logger.error(`The Now Playing press failed: ${err.message}`);
       await ev.action.showAlert();
     }
   }

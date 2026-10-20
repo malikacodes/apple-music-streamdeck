@@ -65,6 +65,7 @@ mock.module(new URL("../src/run.js", import.meta.url).href, {
     run: async (file, args) => {
       if (file === "/usr/bin/open") {
         music.opened++;
+        music.openedWith = args;
         return { stdout: "" };
       }
       // A test can hold a volume change in flight, the way a slow Music
@@ -120,7 +121,7 @@ function start(t, { clock } = {}) {
   lastClock += 10_000_000;
   t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: clock ?? lastClock });
   for (const key of [...deck.keys]) leave(key);
-  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, lagging: false, sent: null, hold: null });
+  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, openedWith: null, lagging: false, sent: null, hold: null });
   deck.switched = [];
   deck.sentToPage = [];
   deck.devices = [xl, plus];
@@ -146,6 +147,22 @@ test("with the + missing the art key shows the alert and switches nothing", asyn
   await press(art);
   assert.deepEqual(deck.switched, []);
   assert.equal(art.alerts, 1);
+  leave(art);
+});
+
+// After a restart the art key is the only music key on my XL, so a
+// press while Music is closed has to start Music, and it mustn't flip
+// the + to the page in the same breath. Music starts hidden and in the
+// background: the deck needs it running, I don't need to see it.
+test("the art key opens Music hidden when Music is closed, and switches nothing", async (t) => {
+  start(t);
+  music.running = false;
+  const art = await appear("nowplaying", { openOn: "7" });
+  await press(art);
+  assert.equal(music.opened, 1);
+  assert.deepEqual(music.openedWith, ["-g", "-j", "-a", "Music"]);
+  assert.deepEqual(deck.switched, []);
+  assert.equal(art.alerts, 0);
   leave(art);
 });
 
