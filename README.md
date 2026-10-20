@@ -14,7 +14,7 @@ Elgato has its own Apple Music plugin, but it's keys only. I wanted dials, a pla
 | Favorite | key | Favorites the song that's playing, or takes it back |
 | Play Playlist | key | Plays one playlist or album from the top. Pick it in the settings |
 | Add to Playlist | key | Adds the playing song to a playlist, with a pink tick for two seconds |
-| Now Playing | key | The album art, dimmed with a pause sign when paused. Press to open the Apple Music page on my + |
+| Now Playing | key | The album art, dimmed with a pause sign when paused. Press to open the Apple Music page on my +, or to start Music when it's closed |
 | Volume | dial | Turn for volume, push to mute |
 | Multimedia | dial | Art, song and artist. Turn for volume (or to skip, a setting), push to play or pause |
 | Play Collection | dial | Turn through my playlists (or library albums or artists), push to play |
@@ -22,7 +22,7 @@ Elgato has its own Apple Music plugin, but it's keys only. I wanted dials, a pla
 | Saved Search | dial | Songs in my library that match words I saved. Push to play |
 | AirPlay | dial | Turn to pick where Music plays, push to play there |
 
-When Music is closed every key says "Open Music", and a press opens it. Nothing in the plugin starts Music on its own.
+When Music is closed every key says "Open Music", and a press starts it hidden, in the background. The deck needs Music running after a restart; I don't need its window. Nothing in the plugin starts Music on its own.
 
 ## Setting it up
 
@@ -49,7 +49,7 @@ Album art is fetched once per song, written to a file and shrunk with `sips`, be
 
 ```bash
 npm run check   # every file parses
-npm test        # 71 tests
+npm test        # 87 tests
 ```
 
 The tests never run `osascript`. The only fake is Music itself, behind `run.js`; the real `index.js` runs against a pretend Stream Deck SDK.

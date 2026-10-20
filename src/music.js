@@ -43,9 +43,12 @@ async function ask(body, { handlers, ...options } = {}) {
 }
 
 // Opening Music is the one thing that's allowed to start it, because a
-// press on "Open Music" means I asked.
+// press on "Open Music" means I asked. It starts hidden (-j) and stays
+// behind whatever I'm working in (-g): the point of the press is that
+// the deck's keys come alive after a restart, not that Music's window
+// lands on my screen.
 export async function openMusic() {
-  await run("/usr/bin/open", ["-a", "Music"]);
+  await run("/usr/bin/open", ["-g", "-j", "-a", "Music"]);
 }
 
 // What the Playback key's dropdown can mean, and the Music command for each.
