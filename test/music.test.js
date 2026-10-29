@@ -134,6 +134,15 @@ test("shuffle, repeat and favorite send the right command and notice Music closi
   assert.equal(await control("next"), false);
 });
 
+// Previous on the queue's first song has no song before it to go to,
+// so partway in it restarts the song instead. The script decides,
+// since it already knows the position: one script, no extra read.
+test("previous restarts the song once it's past the first seconds", async () => {
+  music.answer = "";
+  assert.equal(await control("previous"), true);
+  assert.match(music.scripts.at(-1), /if player position > 3 then\s+set player position to 0\s+else\s+previous track/);
+});
+
 // The settings page can only send what's in its dropdown, but a junk
 // value must not end up inside a script.
 test("a repeat mode that isn't one of the three becomes off", async () => {

@@ -51,10 +51,21 @@ export async function openMusic() {
   await run("/usr/bin/open", ["-g", "-j", "-a", "Music"]);
 }
 
-// What the Playback key's dropdown can mean, and the Music command for each.
+// What the Playback key's dropdown can mean, and the Music command for
+// each. Music's "previous track" only ever means the song before this
+// one, so on the first song of my queue it did nothing (the songs
+// before a jump are gone). Partway into a song, Previous puts the
+// player back to 0 instead, like the button in Music's window. Three
+// seconds in or less counts as the start, so two presses still reach
+// the song before.
+const RESTART_AFTER_S = 3;
 const CONTROLS = {
   playpause: "playpause",
-  previous: "previous track",
+  previous: `if player position > ${RESTART_AFTER_S} then
+      set player position to 0
+    else
+      previous track
+    end if`,
   next: "next track",
 };
 
