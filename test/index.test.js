@@ -41,7 +41,7 @@ function answer(script) {
   if (!music.running) return "closed";
   if (script.includes("set fields to")) {
     music.reads = (music.reads ?? 0) + 1;
-    return [music.state, music.volume, false, music.shuffle, music.repeat, 3, 189, "1E4696F2D8590BD3", music.favorited, "40CBB8B373F96E88", 7, "Get Me Some of That", "Thomas Rhett", "It Goes Like This"].join("\t");
+    return [music.state, music.volume, false, music.shuffle, music.repeat, music.position ?? 3, 189, "1E4696F2D8590BD3", music.favorited, "40CBB8B373F96E88", 7, "Get Me Some of That", "Thomas Rhett", "It Goes Like This"].join("\t");
   }
   if (script.includes("artwork")) return "none";
   if (script.includes("every user playlist")) return "A1A1A1A1\tPop\nB2B2B2B2\tOldies\nC3C3C3C3\tStream Deck Queue";
@@ -55,6 +55,7 @@ function answer(script) {
     music.sent = Number(found[1]);
     if (!music.lagging) music.volume = music.sent;
   }
+  if ((found = script.match(/set player position to (\d+)/))) music.position = Number(found[1]);
   if ((found = script.match(/set shuffle enabled to (\w+)/))) music.shuffle = found[1] === "true";
   if ((found = script.match(/set favorited of current track to (\w+)/))) music.favorited = found[1] === "true";
   return "";
@@ -121,7 +122,7 @@ function start(t, { clock } = {}) {
   lastClock += 10_000_000;
   t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: clock ?? lastClock });
   for (const key of [...deck.keys]) leave(key);
-  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, openedWith: null, lagging: false, sent: null, hold: null });
+  Object.assign(music, { running: true, state: "paused", volume: 40, shuffle: false, repeat: "off", favorited: false, opened: 0, openedWith: null, lagging: false, sent: null, hold: null, position: null });
   deck.switched = [];
   deck.sentToPage = [];
   deck.devices = [xl, plus];
@@ -302,6 +303,26 @@ test("after the trust window the real volume shows again", async (t) => {
   await settle();
   assert.equal(shownPercent(volume), "40");
   leave(volume);
+});
+
+// Set to scrub, a turn moves the player five seconds a click, from
+// where the song is, and never before its start. The strip's bar moves
+// with the guess before Music answers.
+test("a scrubbing turn moves the player five seconds a click", async (t) => {
+  start(t);
+  const media = await appear("multimedia", { turns: "seek" }, plus);
+  await turn(media, 2);
+  assert.equal(music.position, 13, "two clicks forward from 3 seconds");
+  assert.match(media.pictures.at(-1), /width="12"/, "the bar shows 13 of 189 seconds before the next read");
+  // Past the draw window, so the second turn's picture isn't held back
+  // into the next test.
+  t.mock.timers.tick(200);
+  await turn(media, -5);
+  assert.equal(music.position, 0, "back past the start stops at 0");
+  assert.equal(music.volume, 40, "the volume didn't move");
+  t.mock.timers.tick(200);
+  await settle();
+  leave(media);
 });
 
 // A turn draws only the dials showing the volume, once. Keys stay put

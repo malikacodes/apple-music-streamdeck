@@ -366,7 +366,7 @@ let wantedVolume = null;
 let sendingVolume = false;
 async function sendVolume(level, turned) {
   wantedVolume = Math.max(0, Math.min(100, level));
-  lastVolumeSend = Date.now();
+  lastTurnSend = Date.now();
   guess({ volume: wantedVolume });
   if (turned) drawTurned(turned);
   else await redrawVolume();
@@ -377,7 +377,7 @@ async function sendVolume(level, turned) {
     do {
       sent = wantedVolume;
       if (!(await music.setVolume(sent))) return false;
-      lastVolumeSend = Date.now();
+      lastTurnSend = Date.now();
     } while (wantedVolume !== sent);
     // The spin is over, so every dial showing the volume catches up
     // once, the other one included.
@@ -389,10 +389,10 @@ async function sendVolume(level, turned) {
   }
 }
 
-// A turn is in progress while a volume script is running and for a
-// second and a half after the last one (the same TRUST_MS my Audio Dial
-// uses). During that time the once a second read doesn't ask Music
-// anything, for two reasons:
+// A turn is in progress while a volume or seek script is running and
+// for a second and a half after the last one (the same TRUST_MS my
+// Audio Dial uses). During that time the once a second read doesn't
+// ask Music anything, for two reasons:
 //   - Music's own volume lags a turn, so a read landing mid-turn put
 //     its older number back on the strip and the next click started
 //     from there.
@@ -403,20 +403,20 @@ async function sendVolume(level, turned) {
 // After the window the read is trusted again, which also puts a wrong
 // guess right.
 const TRUST_MS = 1500;
-let lastVolumeSend = 0;
+let lastTurnSend = 0;
 // If the Mac's clock is set back (a time zone change, a sync), "since"
 // goes negative, and without the >= 0 the read would be skipped until
 // the clock caught up again.
 function turning() {
-  const since = Date.now() - lastVolumeSend;
-  return sendingVolume || (since >= 0 && since < TRUST_MS);
+  const since = Date.now() - lastTurnSend;
+  return sendingVolume || sendingPosition || (since >= 0 && since < TRUST_MS);
 }
 
 // Only the dials that show the volume: Volume, and Multimedia when its
 // turn changes the volume. Everything else waits for the once a second
 // read.
 async function redrawVolume() {
-  const showing = onScreen().filter(([kind, target]) => kind instanceof Volume || (kind instanceof Multimedia && kind.settings.get(target.id)?.turns !== "track"));
+  const showing = onScreen().filter(([kind, target]) => kind instanceof Volume || (kind instanceof Multimedia && turnsOf(kind.settings.get(target.id)) === "volume"));
   await Promise.all(showing.map(([kind, target]) => kind.render(target)));
 }
 
@@ -496,18 +496,59 @@ class Volume extends MusicAction {
   }
 }
 
+// Scrubbing on the Multimedia dial: five seconds a click, back or
+// forward, never past the end of the song. It's sent the way the volume
+// is (one script at a time, the last click wins, the strip redraws at
+// most every DRAW_MS), and the once a second read sits out the same
+// window after, or its older position would drag the bar back. That's
+// the second copy of sendVolume's loop; a third would be the time to
+// make them one.
+const SEEK_S = 5;
+let wantedPosition = null;
+let sendingPosition = false;
+async function seekBy(ticks, turned) {
+  if (!now?.running || !now.id) return true;
+  const from = wantedPosition ?? now.position;
+  wantedPosition = Math.max(0, Math.min(Math.max(0, now.duration - 1), from + ticks * SEEK_S));
+  lastTurnSend = Date.now();
+  guess({ position: wantedPosition });
+  drawTurned(turned);
+  if (sendingPosition) return true;
+  sendingPosition = true;
+  try {
+    let sent;
+    do {
+      sent = wantedPosition;
+      if (!(await music.seek(sent))) return false;
+      lastTurnSend = Date.now();
+    } while (wantedPosition !== sent);
+    return true;
+  } finally {
+    sendingPosition = false;
+    wantedPosition = null;
+  }
+}
+
+// What the Multimedia dial's turn does, from its dropdown: the volume
+// unless the settings say skip songs or scrub through the song.
+function turnsOf(settings) {
+  return ["track", "seek"].includes(settings?.turns) ? settings.turns : "volume";
+}
+
 class Multimedia extends MusicAction {
   strip = true;
 
   draw(status, settings) {
-    return drawMultimedia({ ...status, muted: isMuted(), turns: settings.turns === "track" ? "track" : "volume", color: settings.volumeColor });
+    return drawMultimedia({ ...status, muted: isMuted(), turns: turnsOf(settings), color: settings.volumeColor });
   }
 
-  // A turn either changes the volume or skips songs, whichever the
-  // settings say. A fast spin is still one song, because a spin of
-  // five clicks shouldn't skip five songs by accident.
+  // A turn changes the volume, scrubs through the song, or skips songs,
+  // whichever the settings say. A fast spin is still one song, because
+  // a spin of five clicks shouldn't skip five songs by accident.
   turn(target, ticks, status, settings) {
-    if (settings.turns !== "track") return turnVolume(ticks, 3, { kind: this, target });
+    const turns = turnsOf(settings);
+    if (turns === "volume") return turnVolume(ticks, 3, { kind: this, target });
+    if (turns === "seek") return seekBy(ticks, { kind: this, target });
     return music.control(ticks > 0 ? "next" : "previous").then(async (open) => {
       await this.render(target);
       return open;

@@ -247,7 +247,7 @@ const TEXT_W = 124;
 // The Multimedia dial's strip: the song and the artist under it, the
 // art on the right, and the bar along the bottom. The bar is the volume
 // when the dial turns the volume, and how far into the song I am when
-// it skips, so it always shows what a turn changes.
+// it skips or scrubs, so it always shows what a turn changes.
 export function drawMultimedia({ art, name, artist, playing = false, volume = 0, muted = false, position = 0, duration = 0, turns = "volume", color } = {}) {
   const parts = [tile({ art, ...ART_TILE, dim: Boolean(art) && !playing, id: "art" })];
   if (!name) {
@@ -256,7 +256,7 @@ export function drawMultimedia({ art, name, artist, playing = false, volume = 0,
   }
   parts.push(label(14, 30, fit(name, TEXT_W, 15)));
   parts.push(small(14, 52, fit(artist ?? "", TEXT_W, 14)));
-  if (turns === "track") parts.push(bar({ x: 14, y: 78, width: 172, share: duration ? position / duration : 0, color: WHITE }));
+  if (turns === "track" || turns === "seek") parts.push(bar({ x: 14, y: 78, width: 172, share: duration ? position / duration : 0, color: WHITE }));
   else parts.push(bar({ x: 14, y: 78, width: 172, share: volume / 100, color: muted ? DIM : barColor(color) }));
   return strip(parts.join(""));
 }

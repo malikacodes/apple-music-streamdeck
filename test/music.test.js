@@ -21,7 +21,7 @@ mock.module(new URL("../src/run.js", import.meta.url).href, {
     },
   },
 });
-const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, artwork, ART_RETRY_MS, NOT_RUNNING, search, addTo, quoted, playlists } = await import("../src/music.js");
+const { parseStatus, status, setShuffle, setRepeat, setFavorite, nextRepeat, control, seek, artwork, ART_RETRY_MS, NOT_RUNNING, search, addTo, quoted, playlists } = await import("../src/music.js");
 
 // Music's side of an art request, the way it behaves on my Mac: it writes
 // the picture's bytes to the file the script names and says "saved", or
@@ -141,6 +141,18 @@ test("previous restarts the song once it's past the first seconds", async () => 
   music.answer = "";
   assert.equal(await control("previous"), true);
   assert.match(music.scripts.at(-1), /if player position > 3 then\s+set player position to 0\s+else\s+previous track/);
+});
+
+// A seek goes to Music as whole seconds from the start, and junk or a
+// negative number becomes 0 rather than a broken script.
+test("a seek sets the player position in whole seconds", async () => {
+  music.answer = "";
+  assert.equal(await seek(42.6), true);
+  assert.match(music.scripts.at(-1), /set player position to 43$/m);
+  await seek(-9);
+  assert.match(music.scripts.at(-1), /set player position to 0$/m);
+  await seek("nope");
+  assert.match(music.scripts.at(-1), /set player position to 0$/m);
 });
 
 // The settings page can only send what's in its dropdown, but a junk
