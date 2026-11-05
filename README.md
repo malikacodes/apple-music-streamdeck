@@ -16,7 +16,7 @@ Elgato has its own Apple Music plugin, but it's keys only. I wanted dials, a pla
 | Add to Playlist | key | Adds the playing song to a playlist, with a pink tick for two seconds |
 | Now Playing | key | The album art, dimmed with a pause sign when paused. Press to open the Apple Music page on my +, or to start Music when it's closed |
 | Volume | dial | Turn for volume, push to mute |
-| Multimedia | dial | Art, song and artist. Turn for volume (or to skip, a setting), push to play or pause |
+| Multimedia | dial | Art, song and artist. Turn for volume, to scrub five seconds a click, or to skip songs (a setting), push to play or pause |
 | Play Collection | dial | Turn through my playlists (or library albums or artists), push to play |
 | Queue | dial | What plays next, with "3 of 42". Push to jump there |
 | Saved Search | dial | Songs in my library that match words I saved. Push to play |

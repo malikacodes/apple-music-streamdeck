@@ -192,6 +192,13 @@ export async function setVolume(level) {
   return (await ask(`    set sound volume to ${safeLevel}`)) !== CLOSED;
 }
 
+// Moves the player within the song, in seconds from the start. Music
+// clamps a position past the end itself, so only junk is kept out.
+export async function seek(seconds) {
+  const safe = Math.max(0, Math.round(Number(seconds) || 0));
+  return (await ask(`    set player position to ${safe}`)) !== CLOSED;
+}
+
 // Album art. Music hands it over as the picture's raw bytes, about half
 // a megabyte for a streamed song. Printed as text that's over a
 // megabyte, more than Node will take from a command by default, so the

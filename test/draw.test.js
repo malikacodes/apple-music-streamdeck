@@ -31,6 +31,7 @@ const pictures = {
   "multimedia no art": drawMultimedia(SONG),
   "multimedia long title": drawMultimedia(LONG),
   "multimedia track mode": drawMultimedia({ ...SONG, turns: "track", position: 60, duration: 180 }),
+  "multimedia seek mode": drawMultimedia({ ...SONG, turns: "seek", position: 60, duration: 180 }),
   "multimedia no track": drawMultimedia({}),
   "strip Music closed": drawStripNotice("Open Music"),
   "now playing": drawNowPlaying({ id: "A1", art: ART, playing: true }),
