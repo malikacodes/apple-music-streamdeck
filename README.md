@@ -57,7 +57,7 @@ The tests never run `osascript`. The only fake is Music itself, behind `run.js`;
 ## Known limits
 
 - Music's `mute` can't be set from a script (error 9038), so mute is the plugin turning the volume to 0 and remembering where it was.
-- A jump drops the songs before it from the queue, so Previous can't go back past a jump.
+- A jump drops the songs before it from the queue, so Previous can't go back past a jump. Past three seconds into a song it starts the song over instead, which is what I want most of the time anyway.
 - The queue's order is only remembered while the plugin runs. After a restart the Queue dial still works, but the Shuffle key falls back to Music's own shuffle until I play something new from the deck.
 - Albums, artists and Saved Search only see my library. Streamed songs that only live in playlists aren't there, and the Apple Music catalogue can't be searched from a script.
 - Streamed songs sometimes have no art for a while. The key shows a plain tile and asks once more ten seconds later.
